@@ -48,3 +48,7 @@ yarn-error.*
 /android
 .vercel
 .env*
+
+# Google / Firebase config files — contain API keys, NEVER commit these
+google-services.json
+GoogleService-Info.plist
