@@ -48,8 +48,6 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreed, setAgreed] = useState(false);
-  const [otp, setOtp] = useState('');
-  const [isOtpSent, setIsOtpSent] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
 
   const { signIn } = useAuth();
@@ -84,7 +82,7 @@ export default function RegisterScreen() {
   });
   // ────────────────────────────────────────────────────────────────
 
-  const canSendOtp =
+  const canSubmit =
     fullName.trim().length > 0 &&
     username.trim().length > 0 &&
     email.trim().length > 0 &&
@@ -92,36 +90,16 @@ export default function RegisterScreen() {
     agreed &&
     submitState === 'idle';
 
-  const canSubmitRegistration = canSendOtp && otp.trim().length > 0 && submitState === 'idle';
-
-  const handleSendOtp = async () => {
-    if (!canSendOtp) return;
-    setSubmitState('loading');
-
-    try {
-      await axios.post(`${API_BASE_URL}/api/auth/send-otp`, { email });
-      setOtp('');
-      setIsOtpSent(true);
-      setSubmitState('idle');
-      alert(`A 6-digit verification code has been sent to ${email}. Please check your Gmail Primary inbox or spam folder.`);
-    } catch (error: any) {
-      console.error('Failed to send registration OTP:', error.response?.data?.message || error.message);
-      setSubmitState('idle');
-      alert(error.response?.data?.message || 'Failed to send verification email. Please verify your email.');
-    }
-  };
-
   const handleSubmit = async () => {
-    if (!canSubmitRegistration) return;
+    if (!canSubmit) return;
     setSubmitState('loading');
 
     try {
       const response = await axios.post(`${API_BASE_URL}/api/auth/register`, {
-        fullName,
-        username,
-        email,
+        fullName: fullName.trim(),
+        username: username.trim(),
+        email: email.trim().toLowerCase(),
         password,
-        otp
       });
 
       if (response.data.token) {
@@ -140,10 +118,10 @@ export default function RegisterScreen() {
 
   const buttonLabel =
     submitState === 'loading'
-      ? (isOtpSent ? 'Creating Account...' : 'Sending OTP...')
+      ? 'Creating Account...'
       : submitState === 'success'
         ? 'Account Created!'
-        : (isOtpSent ? 'Verify & Create Account' : 'Send OTP');
+        : 'Create Account';
 
   return (
     <ScrollView
@@ -327,32 +305,18 @@ export default function RegisterScreen() {
                 </Text>
               </Pressable>
 
-              {isOtpSent && (
-                <Field label="Enter OTP">
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter the code sent to your email"
-                    placeholderTextColor={colors.outline}
-                    value={otp}
-                    onChangeText={setOtp}
-                    keyboardType="number-pad"
-                    accessibilityLabel="One-time password sent to your email"
-                  />
-                </Field>
-              )}
-
               <Pressable
                 style={[
                   styles.submitButton,
                   submitState === 'success' && { backgroundColor: colors.success },
-                  (!(isOtpSent ? canSubmitRegistration : canSendOtp) && submitState === 'idle') && { opacity: 0.5 },
+                  (!canSubmit && submitState === 'idle') && { opacity: 0.5 },
                   submitState === 'loading' && { opacity: 0.9 },
                 ]}
-                onPress={isOtpSent ? handleSubmit : handleSendOtp}
-                disabled={submitState !== 'idle'}
+                onPress={handleSubmit}
+                disabled={submitState !== 'idle' || !canSubmit}
                 accessibilityRole="button"
                 accessibilityLabel={buttonLabel}
-                accessibilityState={{ disabled: submitState !== 'idle' }}
+                accessibilityState={{ disabled: submitState !== 'idle' || !canSubmit }}
               >
                 {submitState === 'loading' ? (
                   <View style={styles.loadingButtonContent}>

@@ -161,6 +161,91 @@ const UserAvatar = ({
   );
 };
 
+const FRAME_RATIOS = [
+  { label: '1:1', name: 'Square', value: 1 / 1 },
+  { label: '16:9', name: 'Wide Landscape', value: 16 / 9 },
+  { label: '4:3', name: 'Standard', value: 4 / 3 },
+  { label: '4:5', name: 'Portrait', value: 4 / 5 },
+  { label: '9:16', name: 'Story / Reel', value: 9 / 16 },
+];
+
+const cropAndFrameImage = (
+  imageUri: string,
+  aspectRatio: number,
+  zoom: number,
+  panX: number,
+  panY: number,
+  rotation: number
+): Promise<string> => {
+  return new Promise((resolve) => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') {
+      resolve(imageUri);
+      return;
+    }
+
+    const img = new (window as any).Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const origW = img.naturalWidth || img.width || 1200;
+        const origH = img.naturalHeight || img.height || 1200;
+
+        let targetW = 1200;
+        let targetH = Math.round(targetW / aspectRatio);
+
+        if (targetH > 1600) {
+          targetH = 1600;
+          targetW = Math.round(targetH * aspectRatio);
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(imageUri);
+          return;
+        }
+
+        ctx.fillStyle = '#060b13';
+        ctx.fillRect(0, 0, targetW, targetH);
+
+        ctx.save();
+        ctx.translate(targetW / 2, targetH / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+
+        const isSwapped = rotation === 90 || rotation === 270;
+        const effectiveOrigW = isSwapped ? origH : origW;
+        const effectiveOrigH = isSwapped ? origW : origH;
+
+        const scaleToCover = Math.max(targetW / effectiveOrigW, targetH / effectiveOrigH);
+        const finalScale = scaleToCover * zoom;
+
+        const drawW = origW * finalScale;
+        const drawH = origH * finalScale;
+
+        const maxPanX = Math.max(0, (drawW - targetW) / 2);
+        const maxPanY = Math.max(0, (drawH - targetH) / 2);
+        const shiftX = panX * maxPanX;
+        const shiftY = panY * maxPanY;
+
+        ctx.drawImage(img, -drawW / 2 + shiftX, -drawH / 2 + shiftY, drawW, drawH);
+        ctx.restore();
+
+        const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        resolve(croppedDataUrl);
+      } catch (err) {
+        console.warn('Canvas crop error:', err);
+        resolve(imageUri);
+      }
+    };
+    img.onerror = () => {
+      resolve(imageUri);
+    };
+    img.src = imageUri;
+  });
+};
+
 const DEFAULT_COMMUNITY_ADVISORS = [
   {
     id: 'shreekutti',
@@ -352,10 +437,29 @@ export default function ProfessionalSocialFeedScreen() {
   const [newsList, setNewsList] = useState(DEFAULT_REAL_ESTATE_NEWS);
   const [showAllNews, setShowAllNews] = useState(false);
   const [suggestedUsers, setSuggestedUsers] = useState<any[]>(DEFAULT_COMMUNITY_ADVISORS);
-  const [followingMap, setFollowingMap] = useState<Record<string, boolean>>({});
+  const [followingMap, setFollowingMap] = useState<Record<string, boolean>>(() => {
+    // Pre-populate from the shared localStorage cache so the feed's + Follow
+    // button reflects the same state as Insights and Profile screens.
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem('boolok_following_users_set');
+        if (raw) return JSON.parse(raw) as Record<string, boolean>;
+      } catch (_) {}
+    }
+    return {};
+  });
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newPostText, setNewPostText] = useState('');
   const [newPostImage, setNewPostImage] = useState<string | null>(null);
+  const [rawSelectedImage, setRawSelectedImage] = useState<string | null>(null);
+  const [isCropModalOpen, setIsCropModalOpen] = useState(false);
+  const [cropAspectRatio, setCropAspectRatio] = useState<number>(1);
+  const [cropRatioLabel, setCropRatioLabel] = useState<string>('1:1');
+  const [cropZoom, setCropZoom] = useState<number>(1);
+  const [cropPanX, setCropPanX] = useState<number>(0);
+  const [cropPanY, setCropPanY] = useState<number>(0);
+  const [cropRotation, setCropRotation] = useState<number>(0);
+  const [isCropping, setIsCropping] = useState<boolean>(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
@@ -379,6 +483,42 @@ export default function ProfessionalSocialFeedScreen() {
 
   const getToken = async () =>
     Platform.OS === 'web' ? localStorage.getItem('userToken') : await SecureStore.getItemAsync('userToken');
+
+  // ── Shared like-count cache helpers ─────────────────────────────────────────
+  // Shape: { [postId]: { count: number, likedByMe: boolean } }
+  const _readLikeCache = (): Record<string, { count: number; likedByMe: boolean }> => {
+    try {
+      if (Platform.OS === 'web') {
+        const raw = localStorage.getItem('boolok_post_likes');
+        return raw ? JSON.parse(raw) : {};
+      }
+    } catch (_) {}
+    return {};
+  };
+
+  const _applyLikeCache = (rawPosts: any[]): any[] => {
+    const cache = _readLikeCache();
+    return rawPosts.map((p) => {
+      const cached = cache[p._id];
+      if (!cached) return p;
+      const isLiked = cached.likedByMe;
+      const count = cached.count;
+      return {
+        ...p,
+        likesCount: count,
+        isLiked,
+        currentUserReaction: isLiked ? 'like' : null,
+        likesSummary:
+          count > 0
+            ? isLiked
+              ? count === 1
+                ? 'Liked by you'
+                : `Liked by you and ${count - 1} other${count > 2 ? 's' : ''}`
+              : `Liked by ${count} member${count > 1 ? 's' : ''}`
+            : '0 likes',
+      };
+    });
+  };
 
   const loadSavedItems = async () => {
     try {
@@ -447,54 +587,183 @@ export default function ProfessionalSocialFeedScreen() {
     setIsLikesModalOpen(true);
     setIsLoadingLikes(true);
 
+    // Build a local liked-members list from the post data (used as fallback)
+    const buildLocalLikersList = (p: any): any[] => {
+      const viewerId = user?.id || user?._id;
+      const viewerName = user?.fullName || user?.username || 'You';
+      const localList: any[] = [];
+
+      // Add current viewer if they liked
+      const isViewerLiked = p.isLiked || (Array.isArray(p.likes) && p.likes.includes(viewerId));
+      if (isViewerLiked && viewerId) {
+        localList.push({
+          id: viewerId,
+          _id: viewerId,
+          fullName: viewerName,
+          username: user?.username || 'you',
+          profilePicture: user?.profilePicture || null,
+          headline: user?.headline || 'Real Estate Professional',
+          reactionType: 'like',
+        });
+      }
+
+      // Add other likers from the post.likes array (may be usernames or IDs for fallback posts)
+      const DEFAULT_ADVISORS: Record<string, { fullName: string; headline: string }> = {
+        shreekutti: { fullName: 'Shreekutti', headline: 'Tech Park Campus Acquisitions Lead @ Boolok' },
+        logeshwarana: { fullName: 'Logeshwaran A', headline: 'Architectural Consultant & Real Estate Lead' },
+        ajmal: { fullName: 'Mohammed Ajmal', headline: 'Luxury Living & High-End Residential Broker' },
+        the_akshtr_estate: { fullName: 'Akshat Commercials', headline: 'Commercial Property & Tech Park Lead @ Boolok' },
+        saivimenthanvl: { fullName: 'Sai Vimenthan', headline: 'Elite Real Estate Broker & Commercial Portfolio Lead' },
+        bavadharini_rs: { fullName: 'Bavadharini RS', headline: 'Interior Designer & Modern Living Specialist' },
+        prasanth_properties: { fullName: 'Prasanth Properties', headline: 'Luxury Waterfront Specialist · Miami & Coastal Estates' },
+        vignesh: { fullName: 'Vigneshwaran', headline: 'Prime Architectural Estates & Beverly Hills Luxury Specialist' },
+        sai: { fullName: 'Sai Vimenthan', headline: 'Elite Real Estate Broker & Commercial Portfolio Lead' },
+      };
+
+      if (Array.isArray(p.likes)) {
+        p.likes.forEach((likerId: string) => {
+          if (!likerId || likerId === viewerId) return; // skip current viewer (already added)
+          const info = DEFAULT_ADVISORS[String(likerId)] || null;
+          localList.push({
+            id: likerId,
+            _id: likerId,
+            fullName: info?.fullName || String(likerId),
+            username: String(likerId),
+            profilePicture: null,
+            headline: info?.headline || 'Boolok Real Estate Member',
+            reactionType: 'like',
+          });
+        });
+      }
+
+      return localList;
+    };
+
     try {
       const token = await getToken();
+      // Only hit the API for real DB posts (valid 24-char MongoDB ObjectId)
+      const isValidObjectId = /^[a-f\d]{24}$/i.test(post._id);
+      if (!isValidObjectId) throw new Error('fallback');
+
       const res = await axios.get(`${API_BASE_URL}/api/feed/${post._id}/reactions`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const list = Array.isArray(res.data?.all) ? res.data.all : [];
-      setAllReactionUsers(list);
-      setLikesModalUsers(list);
-      setReactionCounts({ all: list.length, like: list.length });
+
+      if (list.length > 0) {
+        setAllReactionUsers(list);
+        setLikesModalUsers(list);
+        setReactionCounts({ all: list.length, like: list.length });
+      } else {
+        // API succeeded but no DB record — use local list
+        const local = buildLocalLikersList(currentPost);
+        setAllReactionUsers(local);
+        setLikesModalUsers(local);
+        setReactionCounts({ all: local.length, like: local.length });
+      }
     } catch (error) {
-      setAllReactionUsers([]);
-      setLikesModalUsers([]);
-      setReactionCounts({ all: 0, like: 0 });
+      // Fallback post (non-ObjectId ID) or API error — use local list
+      const local = buildLocalLikersList(currentPost);
+      setAllReactionUsers(local);
+      setLikesModalUsers(local);
+      setReactionCounts({ all: local.length, like: local.length });
     } finally {
       setIsLoadingLikes(false);
     }
   };
 
+
+  const isUserFollowed = useCallback(
+    (userOrId: any): boolean => {
+      if (!userOrId) return false;
+      if (typeof userOrId === 'string') {
+        const trimmed = userOrId.trim();
+        const lower = trimmed.toLowerCase();
+        return Boolean(followingMap[trimmed] || followingMap[lower]);
+      }
+      const id = userOrId.id || userOrId._id;
+      const username = userOrId.username;
+      const lowerUsername = typeof username === 'string' ? username.toLowerCase() : undefined;
+      return Boolean(
+        (id && followingMap[id]) ||
+        (userOrId._id && followingMap[userOrId._id]) ||
+        (userOrId.id && followingMap[userOrId.id]) ||
+        (username && followingMap[username]) ||
+        (lowerUsername && followingMap[lowerUsername])
+      );
+    },
+    [followingMap]
+  );
+
   const fetchPostsAndNews = useCallback(async () => {
     try {
       const token = await getToken();
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const [feedRes, newsRes, suggestedRes] = await Promise.allSettled([
+      const [feedRes, newsRes, suggestedRes, myFollowingRes] = await Promise.allSettled([
         axios.get(`${API_BASE_URL}/api/feed`, { headers }),
         axios.get(`${API_BASE_URL}/api/feed/news`),
         axios.get(`${API_BASE_URL}/api/users/suggested`, { headers }),
+        token ? axios.get(`${API_BASE_URL}/api/users/self/following`, { headers }) : Promise.reject('No token'),
       ]);
 
       if (feedRes.status === 'fulfilled') {
         const raw = feedRes.value.data;
         const postsList = Array.isArray(raw) ? raw : (Array.isArray(raw?.posts) ? raw.posts : []);
-        setPosts(postsList.length > 0 ? postsList : DEFAULT_FEED_POSTS);
+        // Apply cached like counts so counts survive page reload
+        setPosts(_applyLikeCache(postsList.length > 0 ? postsList : DEFAULT_FEED_POSTS));
       } else {
-        setPosts(DEFAULT_FEED_POSTS);
+        setPosts(_applyLikeCache(DEFAULT_FEED_POSTS));
       }
 
       if (newsRes.status === 'fulfilled' && Array.isArray(newsRes.value.data?.news)) {
         setNewsList(newsRes.value.data.news);
       }
 
+      // Sync following truth directly from MongoDB database
+      const dbFollowMap: Record<string, boolean> = {};
+      if (myFollowingRes.status === 'fulfilled' && Array.isArray(myFollowingRes.value.data?.following)) {
+        const followingArray = myFollowingRes.value.data.following;
+        followingArray.forEach((f: any) => {
+          if (!f) return;
+          const fId = f.id || f._id;
+          const fUsername = f.username;
+          if (fId) dbFollowMap[String(fId)] = true;
+          if (f._id) dbFollowMap[String(f._id)] = true;
+          if (fUsername) {
+            dbFollowMap[String(fUsername)] = true;
+            dbFollowMap[String(fUsername).toLowerCase()] = true;
+          }
+        });
+      }
+
       if (suggestedRes.status === 'fulfilled' && Array.isArray(suggestedRes.value.data?.suggested)) {
         const list = suggestedRes.value.data.suggested;
         setSuggestedUsers(list);
-        const map: Record<string, boolean> = {};
         list.forEach((u: any) => {
-          if (u.isFollowing) map[u.id || u._id] = true;
+          if (u.isFollowing) {
+            if (u.id) dbFollowMap[u.id] = true;
+            if (u._id) dbFollowMap[u._id] = true;
+            if (u.username) {
+              dbFollowMap[u.username] = true;
+              dbFollowMap[u.username.toLowerCase()] = true;
+            }
+          }
         });
-        setFollowingMap((prev) => ({ ...prev, ...map }));
+      }
+
+      if (Object.keys(dbFollowMap).length > 0) {
+        setFollowingMap((prev) => ({ ...prev, ...dbFollowMap }));
+        try {
+          if (Platform.OS === 'web') {
+            const raw = localStorage.getItem('boolok_following_users_set');
+            const merged = { ...(raw ? JSON.parse(raw) : {}), ...dbFollowMap };
+            localStorage.setItem('boolok_following_users_set', JSON.stringify(merged));
+          } else {
+            const raw = await SecureStore.getItemAsync('boolok_following_users_set');
+            const merged = { ...(raw ? JSON.parse(raw) : {}), ...dbFollowMap };
+            await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(merged));
+          }
+        } catch (_) {}
       }
     } catch (error) {
       console.error('Feed fetch error:', error);
@@ -513,25 +782,67 @@ export default function ProfessionalSocialFeedScreen() {
     fetchPostsAndNews();
   };
 
-  const toggleFollowAdvisor = async (targetId: string) => {
-    const isCurrentlyFollowing = Boolean(followingMap[targetId]);
+  const toggleFollowAdvisor = async (targetId: string, userObj?: any) => {
+    const advisor = userObj || suggestedUsers.find((u) => (u.id || u._id || u.username) === targetId);
+    const isCurrentlyFollowing = isUserFollowed(advisor || targetId);
     const nextState = !isCurrentlyFollowing;
-    setFollowingMap((prev) => ({ ...prev, [targetId]: nextState }));
+
+    const allKeys = [
+      targetId,
+      advisor?.id,
+      advisor?._id,
+      advisor?.username,
+      typeof advisor?.username === 'string' ? advisor.username.toLowerCase() : null,
+    ].filter(Boolean) as string[];
+
+    // Optimistically update map for all user keys
+    setFollowingMap((prev) => {
+      const updated = { ...prev };
+      allKeys.forEach((k) => {
+        if (nextState) updated[k] = true;
+        else delete updated[k];
+      });
+      return updated;
+    });
 
     // Optimistically update followerCount in the suggested users list
     setSuggestedUsers((prev) =>
       prev.map((u) => {
-        if ((u.id || u._id) === targetId) {
+        const matches = allKeys.includes(u.id) || allKeys.includes(u._id) || allKeys.includes(u.username);
+        if (matches) {
           const currentCount = typeof u.followerCount === 'number' ? u.followerCount : 0;
           return {
             ...u,
             followerCount: nextState ? currentCount + 1 : Math.max(0, currentCount - 1),
+            isFollowing: nextState,
           };
         }
         return u;
       })
     );
 
+    // Sync with shared localStorage follow cache
+    try {
+      if (Platform.OS === 'web') {
+        const raw = localStorage.getItem('boolok_following_users_set');
+        const set = raw ? JSON.parse(raw) : {};
+        allKeys.forEach((key) => {
+          if (nextState) set[key] = true;
+          else delete set[key];
+        });
+        localStorage.setItem('boolok_following_users_set', JSON.stringify(set));
+      } else {
+        const raw = await SecureStore.getItemAsync('boolok_following_users_set');
+        const set = raw ? JSON.parse(raw) : {};
+        allKeys.forEach((key) => {
+          if (nextState) set[key] = true;
+          else delete set[key];
+        });
+        await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(set));
+      }
+    } catch (_) {}
+
+    // Persist to MongoDB database
     try {
       const token = await getToken();
       const res = await axios.post(
@@ -540,31 +851,76 @@ export default function ProfessionalSocialFeedScreen() {
         { headers: token ? { Authorization: `Bearer ${token}` } : {} }
       );
       if (res.data) {
-        if (typeof res.data.isFollowing === 'boolean') {
-          setFollowingMap((prev) => ({ ...prev, [targetId]: res.data.isFollowing }));
-        }
+        const serverFollowing = typeof res.data.isFollowing === 'boolean' ? res.data.isFollowing : nextState;
+        const targetUser = res.data.targetUser;
+        const confirmedKeys = [
+          targetId,
+          targetUser?.id,
+          targetUser?._id,
+          targetUser?.username,
+          typeof targetUser?.username === 'string' ? targetUser.username.toLowerCase() : null,
+          ...allKeys,
+        ].filter(Boolean) as string[];
+
+        setFollowingMap((prev) => {
+          const updated = { ...prev };
+          confirmedKeys.forEach((k) => {
+            if (serverFollowing) updated[k] = true;
+            else delete updated[k];
+          });
+          return updated;
+        });
+
+        try {
+          if (Platform.OS === 'web') {
+            const raw = localStorage.getItem('boolok_following_users_set');
+            const set = raw ? JSON.parse(raw) : {};
+            confirmedKeys.forEach((k) => {
+              if (serverFollowing) set[k] = true;
+              else delete set[k];
+            });
+            localStorage.setItem('boolok_following_users_set', JSON.stringify(set));
+          } else {
+            const raw = await SecureStore.getItemAsync('boolok_following_users_set');
+            const set = raw ? JSON.parse(raw) : {};
+            confirmedKeys.forEach((k) => {
+              if (serverFollowing) set[k] = true;
+              else delete set[k];
+            });
+            await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(set));
+          }
+        } catch (_) {}
+
         // Update the accurate followerCount from server
         if (typeof res.data.followerCount === 'number') {
           setSuggestedUsers((prev) =>
-            prev.map((u) =>
-              (u.id || u._id) === targetId
-                ? { ...u, followerCount: res.data.followerCount }
-                : u
-            )
+            prev.map((u) => {
+              const matches = confirmedKeys.includes(u.id) || confirmedKeys.includes(u._id) || confirmedKeys.includes(u.username);
+              return matches ? { ...u, followerCount: res.data.followerCount, isFollowing: serverFollowing } : u;
+            })
           );
         }
       }
     } catch (error) {
-      console.warn('Failed to update follow in database');
+      console.warn('Failed to update follow in database, reverting:', error);
       // Revert optimistic update on failure
-      setFollowingMap((prev) => ({ ...prev, [targetId]: isCurrentlyFollowing }));
+      setFollowingMap((prev) => {
+        const updated = { ...prev };
+        allKeys.forEach((k) => {
+          if (isCurrentlyFollowing) updated[k] = true;
+          else delete updated[k];
+        });
+        return updated;
+      });
       setSuggestedUsers((prev) =>
         prev.map((u) => {
-          if ((u.id || u._id) === targetId) {
+          const matches = allKeys.includes(u.id) || allKeys.includes(u._id) || allKeys.includes(u.username);
+          if (matches) {
             const currentCount = typeof u.followerCount === 'number' ? u.followerCount : 0;
             return {
               ...u,
               followerCount: isCurrentlyFollowing ? currentCount + 1 : Math.max(0, currentCount - 1),
+              isFollowing: isCurrentlyFollowing,
             };
           }
           return u;
@@ -573,31 +929,55 @@ export default function ProfessionalSocialFeedScreen() {
     }
   };
 
+
   const handleReaction = async (postId: string, reactionType: string = 'like') => {
     setActiveReactionPickerPostId(null);
     const viewerId = user?.id || user?._id;
+
+    // ── Step 1: Optimistic UI update ─────────────────────────────────────────
+    let optimisticCount = 0;
+    let optimisticLiked = false;
 
     setPosts((prev) =>
       prev.map((p) => {
         if (p._id === postId) {
           const currentlyLiked = Boolean(p.isLiked || (Array.isArray(p.likes) && p.likes.includes(viewerId)));
           const nextLiked = !currentlyLiked;
-          const nextLikes = nextLiked
-            ? (Array.isArray(p.likes) ? [...p.likes, viewerId] : [viewerId])
-            : (Array.isArray(p.likes) ? p.likes.filter((id: string) => id !== viewerId) : []);
-          const count = nextLikes.length;
+          const baseCount = typeof p.likesCount === 'number' ? p.likesCount : (Array.isArray(p.likes) ? p.likes.length : 0);
+          const count = nextLiked ? baseCount + 1 : Math.max(0, baseCount - 1);
+          optimisticCount = count;
+          optimisticLiked = nextLiked;
           return {
             ...p,
             isLiked: nextLiked,
             currentUserReaction: nextLiked ? 'like' : null,
-            likes: nextLikes,
             likesCount: count,
-            likesSummary: count > 0 ? (nextLiked ? (count === 1 ? 'Liked by you' : `Liked by you and ${count - 1} other${count > 2 ? 's' : ''}`) : `Liked by ${count} member${count > 1 ? 's' : ''}`) : '0 likes',
+            likesSummary:
+              count > 0
+                ? nextLiked
+                  ? count === 1
+                    ? 'Liked by you'
+                    : `Liked by you and ${count - 1} other${count > 2 ? 's' : ''}`
+                  : `Liked by ${count} member${count > 1 ? 's' : ''}`
+                : '0 likes',
           };
         }
         return p;
       })
     );
+
+    // ── Step 2: Persist to shared localStorage cache immediately ─────────────
+    const _writeLikeCache = (c: Record<string, { count: number; likedByMe: boolean }>) => {
+      try { if (Platform.OS === 'web') localStorage.setItem('boolok_post_likes', JSON.stringify(c)); } catch (_) {}
+    };
+    const cache = _readLikeCache();
+    cache[postId] = { count: optimisticCount, likedByMe: optimisticLiked };
+    _writeLikeCache(cache);
+
+    // ── Step 3: Sync with backend (real DB posts only) ───────────────────────
+    // Skip the API entirely for fallback posts whose IDs are not valid MongoDB ObjectIds
+    const isValidObjectId = /^[a-f\d]{24}$/i.test(postId);
+    if (!isValidObjectId) return; // localStorage cache already has the correct state
 
     try {
       const token = await getToken();
@@ -607,18 +987,53 @@ export default function ProfessionalSocialFeedScreen() {
         { headers: token ? { Authorization: `Bearer ${token}` } : {} }
       );
       if (res.data && res.data.post) {
+        // Use server-confirmed count
+        const serverPost = res.data.post;
         setPosts((prev) =>
-          prev.map((p) => (p._id === postId ? res.data.post : p))
+          prev.map((p) => (p._id === postId ? serverPost : p))
         );
+        // Update cache with accurate server count
+        const freshCache = _readLikeCache();
+        freshCache[postId] = {
+          count: serverPost.likesCount ?? optimisticCount,
+          likedByMe: serverPost.isLiked ?? optimisticLiked,
+        };
+        _writeLikeCache(freshCache);
+      } else if (res.data && typeof res.data.likesCount === 'number') {
+        const serverCount = res.data.likesCount;
+        const serverLiked = res.data.isLiked ?? optimisticLiked;
+        setPosts((prev) =>
+          prev.map((p) => {
+            if (p._id !== postId) return p;
+            return {
+              ...p,
+              likesCount: serverCount,
+              isLiked: serverLiked,
+              currentUserReaction: serverLiked ? 'like' : null,
+              likesSummary:
+                serverCount > 0
+                  ? serverLiked
+                    ? serverCount === 1
+                      ? 'Liked by you'
+                      : `Liked by you and ${serverCount - 1} other${serverCount > 2 ? 's' : ''}`
+                    : `Liked by ${serverCount} member${serverCount > 1 ? 's' : ''}`
+                  : '0 likes',
+            };
+          })
+        );
+        const freshCache = _readLikeCache();
+        freshCache[postId] = { count: serverCount, likedByMe: serverLiked };
+        _writeLikeCache(freshCache);
       }
-    } catch (error) {
-      console.warn('Reaction update failed on server:', error);
+    } catch (err: any) {
+      console.warn('Like API error:', err?.response?.status, err?.message);
     }
   };
 
   const handleLike = (postId: string) => {
     handleReaction(postId, 'like');
   };
+
 
   const handleAddComment = async (postId: string) => {
     const text = (commentInputs[postId] || '').trim();
@@ -656,23 +1071,57 @@ export default function ProfessionalSocialFeedScreen() {
     }
   };
 
+  const openCropTool = (imageUri: string) => {
+    setRawSelectedImage(imageUri);
+    setCropAspectRatio(1);
+    setCropRatioLabel('1:1');
+    setCropZoom(1);
+    setCropPanX(0);
+    setCropPanY(0);
+    setCropRotation(0);
+    setIsCropModalOpen(true);
+  };
+
+  const handleApplyCrop = async () => {
+    const src = rawSelectedImage || newPostImage;
+    if (!src) return;
+    setIsCropping(true);
+    try {
+      const croppedUri = await cropAndFrameImage(
+        src,
+        cropAspectRatio,
+        cropZoom,
+        cropPanX,
+        cropPanY,
+        cropRotation
+      );
+      setNewPostImage(croppedUri);
+      setIsCropModalOpen(false);
+      setIsCreateModalOpen(true);
+    } catch (err) {
+      console.error('Crop application error:', err);
+      if (rawSelectedImage) setNewPostImage(rawSelectedImage);
+      setIsCropModalOpen(false);
+      setIsCreateModalOpen(true);
+    } finally {
+      setIsCropping(false);
+    }
+  };
+
   const handlePickImageFromDevice = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.85,
+        allowsEditing: false,
+        quality: 1,
         base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        if (asset.base64) {
-          setNewPostImage(`data:image/jpeg;base64,${asset.base64}`);
-        } else {
-          setNewPostImage(asset.uri);
-        }
-        setIsCreateModalOpen(true);
+        const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setNewPostImage(uri);
+        openCropTool(uri);
       }
     } catch (error) {
       console.error('Device image pick error:', error);
@@ -684,19 +1133,16 @@ export default function ProfessionalSocialFeedScreen() {
     try {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.85,
+        allowsEditing: false,
+        quality: 1,
         base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        if (asset.base64) {
-          setNewPostImage(`data:image/jpeg;base64,${asset.base64}`);
-        } else {
-          setNewPostImage(asset.uri);
-        }
-        setIsCreateModalOpen(true);
+        const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setNewPostImage(uri);
+        openCropTool(uri);
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -1076,10 +1522,10 @@ export default function ProfessionalSocialFeedScreen() {
 
                     {!isSelfPost && (
                       <Pressable
-                        onPress={() => toggleFollowAdvisor(author._id || author.username)}
+                        onPress={() => toggleFollowAdvisor(author._id || author.username, author)}
                         style={[
                           styles.feedFollowBtn,
-                          followingMap[author._id || author.username] && {
+                          isUserFollowed(author) && {
                             backgroundColor: '#1a273c',
                           },
                         ]}
@@ -1088,13 +1534,13 @@ export default function ProfessionalSocialFeedScreen() {
                           style={[
                             styles.feedFollowBtnText,
                             {
-                              color: followingMap[author._id || author.username]
+                              color: isUserFollowed(author)
                                 ? '#ffffff'
                                 : goldPrimary,
                             },
                           ]}
                         >
-                          {followingMap[author._id || author.username] ? '✓ Following' : '+ Follow'}
+                          {isUserFollowed(author) ? '✓ Following' : '+ Follow'}
                         </Text>
                       </Pressable>
                     )}
@@ -1406,7 +1852,7 @@ export default function ProfessionalSocialFeedScreen() {
               {suggestedUsers.length > 0 ? (
                 suggestedUsers.map((adv) => {
                   const advId = adv.id || adv._id;
-                  const isF = Boolean(followingMap[advId]);
+                  const isF = isUserFollowed(adv);
                   let advFullName = adv.fullName;
                   let advUsername = adv.username;
 
@@ -1444,7 +1890,7 @@ export default function ProfessionalSocialFeedScreen() {
                       </Pressable>
 
                       <Pressable
-                        onPress={() => toggleFollowAdvisor(advId)}
+                        onPress={() => toggleFollowAdvisor(advId, adv)}
                         style={[
                           styles.advisorFollowBtn,
                           isF && { backgroundColor: '#1a273c' },
@@ -1528,16 +1974,28 @@ export default function ProfessionalSocialFeedScreen() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
                     <MaterialCommunityIcons name="check-circle" size={16} color="#4ade80" />
                     <Text style={styles.imagePreviewLabel} numberOfLines={1}>
-                      Photo attached from device
+                      Frame: {cropRatioLabel} | Zoom: {cropZoom.toFixed(1)}x
                     </Text>
                   </View>
-                  <Pressable
-                    onPress={() => setNewPostImage(null)}
-                    style={styles.imagePreviewRemoveBtn}
-                  >
-                    <MaterialIcons name="close" size={14} color="#ffffff" />
-                    <Text style={styles.imagePreviewRemoveText}>Remove</Text>
-                  </Pressable>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Pressable
+                      onPress={() => openCropTool(rawSelectedImage || newPostImage)}
+                      style={[styles.imagePreviewCropBtn, { borderColor: goldPrimary }]}
+                    >
+                      <MaterialIcons name="crop" size={14} color={goldPrimary} />
+                      <Text style={[styles.imagePreviewCropText, { color: goldPrimary }]}>Alter Frame & Crop</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        setNewPostImage(null);
+                        setRawSelectedImage(null);
+                      }}
+                      style={styles.imagePreviewRemoveBtn}
+                    >
+                      <MaterialIcons name="close" size={14} color="#ffffff" />
+                      <Text style={styles.imagePreviewRemoveText}>Remove</Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             ) : (
@@ -1560,13 +2018,34 @@ export default function ProfessionalSocialFeedScreen() {
                   </Pressable>
                 </View>
 
-                <TextInput
-                  placeholder="Or paste property image URL (e.g. https://...)..."
-                  placeholderTextColor="#66768f"
-                  style={[styles.modalUrlInput, { borderColor, marginBottom: 0 }]}
-                  value={newPostImage || ''}
-                  onChangeText={setNewPostImage}
-                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                  <TextInput
+                    placeholder="Or paste property image URL (e.g. https://...)..."
+                    placeholderTextColor="#66768f"
+                    style={[styles.modalUrlInput, { borderColor, marginBottom: 0, flex: 1 }]}
+                    value={newPostImage || ''}
+                    onChangeText={setNewPostImage}
+                  />
+                  {newPostImage ? (
+                    <Pressable
+                      onPress={() => openCropTool(newPostImage)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        backgroundColor: '#1e293b',
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: goldPrimary,
+                      }}
+                    >
+                      <MaterialIcons name="crop" size={16} color={goldPrimary} />
+                      <Text style={{ color: goldPrimary, fontSize: 12, fontWeight: '700' }}>Alter Frame</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
             )}
 
@@ -1595,6 +2074,390 @@ export default function ProfessionalSocialFeedScreen() {
         </View>
       </Modal>
 
+      {/* ── ALTER FRAME & CROP MODAL ────────────────────────────────────────── */}
+      <Modal
+        visible={isCropModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsCropModalOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.cropModalContainer, { backgroundColor: cardBg, borderColor }]}>
+            {/* Header */}
+            <View style={[styles.modalHeader, { borderBottomWidth: 1, borderBottomColor: borderColor, paddingBottom: 12 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(230, 184, 0, 0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <MaterialIcons name="crop" size={18} color={goldPrimary} />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: isDark ? '#ffffff' : '#0f172a' }}>
+                    Alter Frame & Crop
+                  </Text>
+                  <Text style={{ fontSize: 11, color: isDark ? '#8b9bb4' : '#64748b' }}>
+                    Select aspect ratio frame, zoom size & align before posting
+                  </Text>
+                </View>
+              </View>
+              <Pressable
+                onPress={() => setIsCropModalOpen(false)}
+                style={{ padding: 6, borderRadius: 8, backgroundColor: isDark ? '#1e293b' : '#f1f5f9' }}
+              >
+                <MaterialIcons name="close" size={20} color={isDark ? '#cbd5e1' : '#475569'} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 580 }}>
+              {/* Aspect Ratio Frame Selector */}
+              <View style={{ marginTop: 14, marginBottom: 12 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: goldPrimary, marginBottom: 8, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                  1. Choose Aspect Ratio Frame
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {FRAME_RATIOS.map((ratio) => {
+                    const isSelected = cropRatioLabel === ratio.label;
+                    return (
+                      <Pressable
+                        key={ratio.label}
+                        onPress={() => {
+                          setCropAspectRatio(ratio.value);
+                          setCropRatioLabel(ratio.label);
+                        }}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 8,
+                          borderRadius: 20,
+                          backgroundColor: isSelected ? 'rgba(230, 184, 0, 0.18)' : (isDark ? '#131e2e' : '#f1f5f9'),
+                          borderWidth: 1.5,
+                          borderColor: isSelected ? goldPrimary : (isDark ? '#1e2e42' : '#cbd5e1'),
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <MaterialCommunityIcons
+                          name={ratio.label === '1:1' ? 'crop-square' : ratio.label === '16:9' ? 'crop-landscape' : ratio.label === '9:16' ? 'cellphone' : 'crop-portrait'}
+                          size={15}
+                          color={isSelected ? goldPrimary : (isDark ? '#8b9bb4' : '#64748b')}
+                        />
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: isSelected ? goldPrimary : (isDark ? '#cbd5e1' : '#334155') }}>
+                          {ratio.label}
+                        </Text>
+                        <Text style={{ fontSize: 10, color: isSelected ? (isDark ? '#fef08a' : '#854d0e') : (isDark ? '#64748b' : '#94a3b8') }}>
+                          ({ratio.name})
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* Live Framing Preview Viewfinder */}
+              <View style={{ marginBottom: 14 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: goldPrimary, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                    2. Viewfinder & Crop Preview
+                  </Text>
+                  <Text style={{ fontSize: 11, color: isDark ? '#94a3b8' : '#64748b' }}>
+                    Frame: <Text style={{ color: goldPrimary, fontWeight: '700' }}>{cropRatioLabel}</Text> • Zoom: <Text style={{ color: goldPrimary, fontWeight: '700' }}>{cropZoom.toFixed(1)}x</Text> • Rot: <Text style={{ color: goldPrimary, fontWeight: '700' }}>{cropRotation}°</Text>
+                  </Text>
+                </View>
+
+                {/* Outer Viewport Canvas */}
+                <View
+                  style={{
+                    width: '100%',
+                    height: 280,
+                    backgroundColor: '#03070d',
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: '#1e2e42',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Dynamic Aspect Ratio Mask Window */}
+                  {(() => {
+                    const maxFrameW = Math.min(width - 64, 460);
+                    const maxFrameH = 250;
+                    let frameW = maxFrameW;
+                    let frameH = Math.round(frameW / cropAspectRatio);
+                    if (frameH > maxFrameH) {
+                      frameH = maxFrameH;
+                      frameW = Math.round(frameH * cropAspectRatio);
+                    }
+                    if (frameW > maxFrameW) {
+                      frameW = maxFrameW;
+                      frameH = Math.round(frameW / cropAspectRatio);
+                    }
+
+                    return (
+                      <View
+                        style={{
+                          width: frameW,
+                          height: frameH,
+                          position: 'relative',
+                          overflow: 'hidden',
+                          borderRadius: 8,
+                          borderWidth: 2,
+                          borderColor: goldPrimary,
+                          backgroundColor: '#060b13',
+                          shadowColor: goldPrimary,
+                          shadowOpacity: 0.35,
+                          shadowRadius: 10,
+                          elevation: 8,
+                        }}
+                      >
+                        {/* The Actual Transformed Image */}
+                        {rawSelectedImage || newPostImage ? (
+                          <View
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              transform: [
+                                { scale: cropZoom },
+                                { rotate: `${cropRotation}deg` },
+                                { translateX: cropPanX * 35 },
+                                { translateY: cropPanY * 35 },
+                              ],
+                            }}
+                          >
+                            <Image
+                              source={{ uri: rawSelectedImage || newPostImage || '' }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                          </View>
+                        ) : null}
+
+                        {/* Rule of Thirds Golden Grid Lines */}
+                        <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+                          {/* Horizontal Lines */}
+                          <View style={{ position: 'absolute', top: '33.33%', left: 0, right: 0, height: 1, backgroundColor: 'rgba(230, 184, 0, 0.4)' }} />
+                          <View style={{ position: 'absolute', top: '66.66%', left: 0, right: 0, height: 1, backgroundColor: 'rgba(230, 184, 0, 0.4)' }} />
+                          {/* Vertical Lines */}
+                          <View style={{ position: 'absolute', left: '33.33%', top: 0, bottom: 0, width: 1, backgroundColor: 'rgba(230, 184, 0, 0.4)' }} />
+                          <View style={{ position: 'absolute', left: '66.66%', top: 0, bottom: 0, width: 1, backgroundColor: 'rgba(230, 184, 0, 0.4)' }} />
+
+                          {/* Corner Brackets */}
+                          <View style={{ position: 'absolute', top: 4, left: 4, width: 12, height: 12, borderTopWidth: 2, borderLeftWidth: 2, borderColor: '#ffffff' }} />
+                          <View style={{ position: 'absolute', top: 4, right: 4, width: 12, height: 12, borderTopWidth: 2, borderRightWidth: 2, borderColor: '#ffffff' }} />
+                          <View style={{ position: 'absolute', bottom: 4, left: 4, width: 12, height: 12, borderBottomWidth: 2, borderLeftWidth: 2, borderColor: '#ffffff' }} />
+                          <View style={{ position: 'absolute', bottom: 4, right: 4, width: 12, height: 12, borderBottomWidth: 2, borderRightWidth: 2, borderColor: '#ffffff' }} />
+                        </View>
+                      </View>
+                    );
+                  })()}
+                </View>
+              </View>
+
+              {/* Adjust Controls: Size/Zoom, Position Pan, and Rotation */}
+              <View style={{ backgroundColor: isDark ? '#0b1320' : '#f8fafc', borderRadius: 10, padding: 12, borderWidth: 1, borderColor, marginBottom: 16 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: goldPrimary, marginBottom: 10, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                  3. Adjust Size & Framing Position
+                </Text>
+
+                {/* Size / Zoom Steppers & Presets */}
+                <View style={{ marginBottom: 12 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#cbd5e1' : '#334155' }}>
+                      Size / Zoom Scale
+                    </Text>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: goldPrimary }}>
+                      {cropZoom.toFixed(2)}x
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Pressable
+                      onPress={() => setCropZoom((prev) => Math.max(1, parseFloat((prev - 0.1).toFixed(2))))}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 8,
+                        backgroundColor: isDark ? '#1e293b' : '#e2e8f0',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <MaterialIcons name="remove" size={18} color={isDark ? '#ffffff' : '#0f172a'} />
+                    </Pressable>
+
+                    {/* Quick Zoom Presets */}
+                    {[1.0, 1.25, 1.5, 2.0].map((z) => (
+                      <Pressable
+                        key={z}
+                        onPress={() => setCropZoom(z)}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          backgroundColor: Math.abs(cropZoom - z) < 0.05 ? 'rgba(230, 184, 0, 0.2)' : (isDark ? '#131e2e' : '#f1f5f9'),
+                          borderWidth: 1,
+                          borderColor: Math.abs(cropZoom - z) < 0.05 ? goldPrimary : (isDark ? '#233248' : '#cbd5e1'),
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: Math.abs(cropZoom - z) < 0.05 ? goldPrimary : (isDark ? '#cbd5e1' : '#334155') }}>
+                          {z}x
+                        </Text>
+                      </Pressable>
+                    ))}
+
+                    <Pressable
+                      onPress={() => setCropZoom((prev) => Math.min(3, parseFloat((prev + 0.1).toFixed(2))))}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 8,
+                        backgroundColor: isDark ? '#1e293b' : '#e2e8f0',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <MaterialIcons name="add" size={18} color={isDark ? '#ffffff' : '#0f172a'} />
+                    </Pressable>
+                  </View>
+                </View>
+
+                {/* Pan Positioning & Rotation Row */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 6, borderTopWidth: 1, borderTopColor: isDark ? '#182436' : '#e2e8f0' }}>
+                  {/* Pan D-pad */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? '#8b9bb4' : '#64748b', marginBottom: 6 }}>
+                      Pan & Align Framing
+                    </Text>
+                    <View style={{ alignItems: 'center' }}>
+                      <Pressable
+                        onPress={() => setCropPanY((prev) => Math.max(-1, parseFloat((prev - 0.2).toFixed(2))))}
+                        style={{ width: 30, height: 26, borderRadius: 6, backgroundColor: isDark ? '#1e293b' : '#e2e8f0', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}
+                      >
+                        <MaterialIcons name="keyboard-arrow-up" size={18} color={isDark ? '#ffffff' : '#0f172a'} />
+                      </Pressable>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Pressable
+                          onPress={() => setCropPanX((prev) => Math.max(-1, parseFloat((prev - 0.2).toFixed(2))))}
+                          style={{ width: 30, height: 26, borderRadius: 6, backgroundColor: isDark ? '#1e293b' : '#e2e8f0', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <MaterialIcons name="keyboard-arrow-left" size={18} color={isDark ? '#ffffff' : '#0f172a'} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setCropPanX(0);
+                            setCropPanY(0);
+                          }}
+                          style={{ paddingHorizontal: 8, height: 26, borderRadius: 6, backgroundColor: 'rgba(230, 184, 0, 0.15)', borderWidth: 1, borderColor: goldPrimary, alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: goldPrimary }}>Center</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => setCropPanX((prev) => Math.min(1, parseFloat((prev + 0.2).toFixed(2))))}
+                          style={{ width: 30, height: 26, borderRadius: 6, backgroundColor: isDark ? '#1e293b' : '#e2e8f0', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <MaterialIcons name="keyboard-arrow-right" size={18} color={isDark ? '#ffffff' : '#0f172a'} />
+                        </Pressable>
+                      </View>
+                      <Pressable
+                        onPress={() => setCropPanY((prev) => Math.min(1, parseFloat((prev + 0.2).toFixed(2))))}
+                        style={{ width: 30, height: 26, borderRadius: 6, backgroundColor: isDark ? '#1e293b' : '#e2e8f0', alignItems: 'center', justifyContent: 'center', marginTop: 4 }}
+                      >
+                        <MaterialIcons name="keyboard-arrow-down" size={18} color={isDark ? '#ffffff' : '#0f172a'} />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  {/* Rotate & Reset Column */}
+                  <View style={{ width: 130, gap: 8 }}>
+                    <Pressable
+                      onPress={() => setCropRotation((prev) => (prev + 90) % 360)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        backgroundColor: isDark ? '#1a2638' : '#e2e8f0',
+                        borderWidth: 1,
+                        borderColor: isDark ? '#2b3d56' : '#cbd5e1',
+                      }}
+                    >
+                      <MaterialIcons name="rotate-right" size={18} color={goldPrimary} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#ffffff' : '#0f172a' }}>
+                        Rotate 90°
+                      </Text>
+                    </Pressable>
+
+                    <Pressable
+                      onPress={() => {
+                        setCropZoom(1);
+                        setCropPanX(0);
+                        setCropPanY(0);
+                        setCropRotation(0);
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        paddingVertical: 8,
+                        borderRadius: 8,
+                        backgroundColor: 'transparent',
+                        borderWidth: 1,
+                        borderColor: isDark ? '#334155' : '#cbd5e1',
+                      }}
+                    >
+                      <MaterialIcons name="refresh" size={16} color={isDark ? '#8b9bb4' : '#64748b'} />
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: isDark ? '#8b9bb4' : '#64748b' }}>
+                        Reset Framing
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Modal Bottom Actions */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingTop: 14, borderTopWidth: 1, borderTopColor: borderColor }}>
+              <Pressable
+                onPress={() => setIsCropModalOpen(false)}
+                style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: isDark ? '#1e293b' : '#e2e8f0' }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: isDark ? '#cbd5e1' : '#475569' }}>
+                  Cancel
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleApplyCrop}
+                disabled={isCropping}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingVertical: 10,
+                  paddingHorizontal: 20,
+                  borderRadius: 8,
+                  backgroundColor: goldPrimary,
+                  opacity: isCropping ? 0.7 : 1,
+                }}
+              >
+                {isCropping ? (
+                  <ActivityIndicator size="small" color="#000000" />
+                ) : (
+                  <>
+                    <MaterialIcons name="check" size={18} color="#000000" />
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#000000' }}>
+                      Apply Frame & Crop
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* ── POST LIKES / REACTIONS MODAL WITH REAL-TIME CATEGORIES (ALL, LIKES, LOVE) ── */}
       <Modal
         visible={isLikesModalOpen}
@@ -1611,7 +2474,7 @@ export default function ProfessionalSocialFeedScreen() {
                   <MaterialIcons name="thumb-up" size={12} color="#ffffff" />
                 </View>
                 <Text style={{ fontSize: 16, fontWeight: '800', color: isDark ? '#ffffff' : '#0f172a', marginLeft: 4 }}>
-                  Likes ({allReactionUsers.length})
+                  Likes ({allReactionUsers.length > 0 ? allReactionUsers.length : (likesModalPost?.likesCount || 0)})
                 </Text>
               </View>
               <Pressable onPress={() => setIsLikesModalOpen(false)} style={{ padding: 4 }}>
@@ -1619,7 +2482,7 @@ export default function ProfessionalSocialFeedScreen() {
               </Pressable>
             </View>
 
-            {/* Categorization Tabs (All, 👍 Thumbs Up) */}
+            {/* Categorization Tabs */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, borderBottomWidth: 1, borderBottomColor: borderColor, paddingBottom: 10 }}>
               <Pressable
                 onPress={() => setReactionTab('all')}
@@ -1628,7 +2491,7 @@ export default function ProfessionalSocialFeedScreen() {
                 ]}
               >
                 <Text style={{ fontSize: 13, fontWeight: '700', color: reactionTab === 'all' ? (isDark ? '#ffffff' : '#0f172a') : (isDark ? '#8b9bb4' : '#64748b') }}>
-                  All ({allReactionUsers.length})
+                  All ({allReactionUsers.length > 0 ? allReactionUsers.length : (likesModalPost?.likesCount || 0)})
                 </Text>
               </Pressable>
 
@@ -1642,7 +2505,7 @@ export default function ProfessionalSocialFeedScreen() {
                   <MaterialIcons name="thumb-up" size={10} color="#ffffff" />
                 </View>
                 <Text style={{ fontSize: 13, fontWeight: '700', color: reactionTab === 'like' ? '#3b82f6' : (isDark ? '#8b9bb4' : '#64748b') }}>
-                  Thumbs Up ({allReactionUsers.length})
+                  Thumbs Up ({allReactionUsers.length > 0 ? allReactionUsers.length : (likesModalPost?.likesCount || 0)})
                 </Text>
               </Pressable>
             </View>
@@ -1655,9 +2518,18 @@ export default function ProfessionalSocialFeedScreen() {
                   <Text style={{ color: isDark ? '#8b9bb4' : '#64748b', fontSize: 12, marginTop: 8 }}>Loading real-time reactions...</Text>
                 </View>
               ) : (reactionTab === 'all' ? allReactionUsers : allReactionUsers.filter((u) => u.reactionType === reactionTab)).length > 0 ? (
-                (reactionTab === 'all' ? allReactionUsers : allReactionUsers.filter((u) => u.reactionType === reactionTab)).map((u: any, idx: number) => {
+                 (reactionTab === 'all' ? allReactionUsers : allReactionUsers.filter((u) => u.reactionType === reactionTab)).map((u: any, idx: number) => {
                   const uId = u.id || u._id || u.username;
-                  const isF = Boolean(followingMap[uId]);
+                  const uUsername = u.username || '';
+                  // Check if this entry is the currently logged-in user
+                  const viewerId = user?.id || user?._id;
+                  const viewerUsername = user?.username || '';
+                  const isMe = Boolean(
+                    (uId && viewerId && uId === viewerId) ||
+                    (uUsername && viewerUsername && uUsername === viewerUsername)
+                  );
+                  // Check follow state by all possible identifiers
+                  const isF = isUserFollowed(u);
                   const uReaction = u.reactionType || 'like';
 
                   return (
@@ -1704,7 +2576,7 @@ export default function ProfessionalSocialFeedScreen() {
                         <View style={{ marginLeft: 12, flex: 1 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             <Text style={{ color: isDark ? '#ffffff' : '#0f172a', fontWeight: '700', fontSize: 14 }}>
-                              {u.fullName || u.username}
+                              {u.fullName || u.username}{isMe ? ' (You)' : ''}
                             </Text>
                             <MaterialIcons name="verified" size={14} color="#0095f6" />
                           </View>
@@ -1719,23 +2591,25 @@ export default function ProfessionalSocialFeedScreen() {
                         </View>
                       </Pressable>
 
-                      {/* Follow/Connect Button */}
-                      <Pressable
-                        onPress={() => toggleFollowAdvisor(uId)}
-                        style={[
-                          styles.advisorFollowBtn,
-                          isF && { backgroundColor: isDark ? '#1a273c' : '#f1f5f9' },
-                        ]}
-                      >
-                        <Text
+                      {/* Connect button — hidden for current user */}
+                      {!isMe && (
+                        <Pressable
+                          onPress={() => toggleFollowAdvisor(uId, u)}
                           style={[
-                            styles.advisorFollowBtnText,
-                            { color: isF ? (isDark ? '#ffffff' : '#0f172a') : goldPrimary },
+                            styles.advisorFollowBtn,
+                            isF && { backgroundColor: isDark ? '#1a273c' : '#f1f5f9' },
                           ]}
                         >
-                          {isF ? '✓ Connected' : '+ Connect'}
-                        </Text>
-                      </Pressable>
+                          <Text
+                            style={[
+                              styles.advisorFollowBtnText,
+                              { color: isF ? (isDark ? '#ffffff' : '#0f172a') : goldPrimary },
+                            ]}
+                          >
+                            {isF ? '✓ Connected' : '+ Connect'}
+                          </Text>
+                        </Pressable>
+                      )}
                     </View>
                   );
                 })
@@ -1785,7 +2659,16 @@ export default function ProfessionalSocialFeedScreen() {
               ) : followersList.length > 0 ? (
                 followersList.map((fUser: any, idx: number) => {
                   const fId = fUser.id || fUser._id || fUser.username;
-                  const isF = Boolean(followingMap[fId] || followingMap[fUser.username]);
+                  const fUsername = fUser.username || '';
+                  // Check if this follower is the current user
+                  const viewerIdF = user?.id || user?._id;
+                  const viewerUsernameF = user?.username || '';
+                  const isMeF = Boolean(
+                    (fId && viewerIdF && fId === viewerIdF) ||
+                    (fUsername && viewerUsernameF && fUsername === viewerUsernameF)
+                  );
+                  // Check follow state by all possible identifiers
+                  const isF = isUserFollowed(fUser);
                   return (
                     <View
                       key={fId || idx}
@@ -1811,7 +2694,7 @@ export default function ProfessionalSocialFeedScreen() {
                         <View style={{ marginLeft: 12, flex: 1 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                             <Text style={{ color: isDark ? '#ffffff' : '#0f172a', fontWeight: '700', fontSize: 13.5 }}>
-                              {fUser.fullName || fUser.username}
+                              {fUser.fullName || fUser.username}{isMeF ? ' (You)' : ''}
                             </Text>
                             <MaterialIcons name="verified" size={14} color="#0095f6" />
                           </View>
@@ -1826,23 +2709,25 @@ export default function ProfessionalSocialFeedScreen() {
                         </View>
                       </Pressable>
 
-                      {/* Connect / Follow Toggle */}
-                      <Pressable
-                        onPress={() => toggleFollowAdvisor(fId)}
-                        style={[
-                          styles.advisorFollowBtn,
-                          isF && { backgroundColor: '#1a273c', borderColor: '#223854' },
-                        ]}
-                      >
-                        <Text
+                      {/* Connect button — hidden for current user */}
+                      {!isMeF && (
+                        <Pressable
+                          onPress={() => toggleFollowAdvisor(fId, fUser)}
                           style={[
-                            styles.advisorFollowBtnText,
-                            { color: isF ? '#ffffff' : goldPrimary },
+                            styles.advisorFollowBtn,
+                            isF && { backgroundColor: '#1a273c', borderColor: '#223854' },
                           ]}
                         >
-                          {isF ? '✓ Connected' : '+ Connect'}
-                        </Text>
-                      </Pressable>
+                          <Text
+                            style={[
+                              styles.advisorFollowBtnText,
+                              { color: isF ? '#ffffff' : goldPrimary },
+                            ]}
+                          >
+                            {isF ? '✓ Connected' : '+ Connect'}
+                          </Text>
+                        </Pressable>
+                      )}
                     </View>
                   );
                 })
@@ -1986,7 +2871,7 @@ export default function ProfessionalSocialFeedScreen() {
             <ScrollView style={{ marginTop: 12 }} showsVerticalScrollIndicator={false}>
               {DEFAULT_COMMUNITY_ADVISORS.map((broker: any) => {
                 const bId = broker.id || broker._id;
-                const isF = Boolean(followingMap[bId] || followingMap[broker.username]);
+                const isF = isUserFollowed(broker);
                 return (
                   <View
                     key={bId}
@@ -2032,7 +2917,7 @@ export default function ProfessionalSocialFeedScreen() {
                     </Pressable>
 
                     <Pressable
-                      onPress={() => toggleFollowAdvisor(bId)}
+                      onPress={() => toggleFollowAdvisor(bId, broker)}
                       style={[
                         styles.advisorFollowBtn,
                         isF && { backgroundColor: '#1a273c', borderColor: '#223854' },
@@ -3059,6 +3944,28 @@ const getStyles = (isDark: boolean, width: number = 1024) => {
       color: '#ffffff',
       fontSize: 11,
       fontWeight: '700',
+    },
+    imagePreviewCropBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(230, 184, 0, 0.12)',
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 6,
+      borderWidth: 1,
+    },
+    imagePreviewCropText: {
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    cropModalContainer: {
+      width: '100%',
+      maxWidth: 540,
+      borderRadius: 16,
+      padding: 20,
+      borderWidth: 1,
+      maxHeight: '92%',
     },
     modalFooterActions: {
       flexDirection: 'row',

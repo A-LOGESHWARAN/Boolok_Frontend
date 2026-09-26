@@ -144,7 +144,11 @@ function AppLayoutContent() {
         </Animated.View>
 
         {/* Navigation */}
-        <View style={[styles.navContainer, { width: 260 }]}>
+        <ScrollView
+          style={[styles.navContainer, { width: 260 }]}
+          contentContainerStyle={{ flexGrow: 1 }}
+          showsVerticalScrollIndicator={false}
+        >
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.route || pathname === item.route.replace('/(app)', '');
             return (
@@ -179,25 +183,10 @@ function AppLayoutContent() {
               </Pressable>
             );
           })}
-        </View>
+        </ScrollView>
 
         {/* Bottom Actions */}
         <View style={[styles.sidebarBottom, { width: 260 }]}>
-
-          <Animated.View style={[styles.proPlanCard, { backgroundColor: theme.surfaceContainerHigh, borderColor: 'rgba(218, 165, 32, 0.1)', width: 228, marginLeft: spacing.md }, animatedExpandStyle]}>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: theme.primary, textTransform: 'uppercase', marginBottom: 2 }} numberOfLines={1}>Pro Plan</Text>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: theme.onSurface, marginBottom: spacing.sm }} numberOfLines={1}>Unlock Global Data</Text>
-            <Pressable
-              style={({ pressed, hovered }: any) => [
-                styles.upgradeBtn,
-                { backgroundColor: theme.primary },
-                (pressed || hovered) && { transform: [{ scale: 0.98 }] }
-              ]}
-            >
-              <Text style={{ fontSize: 12, fontWeight: '700', color: theme.onPrimary }} numberOfLines={1}>Upgrade to Pro</Text>
-            </Pressable>
-          </Animated.View>
-
           <Pressable
             style={({ pressed, hovered }: any) => [styles.bottomLink, (pressed || hovered) && { opacity: 0.7 }]}
             onPress={() => { }}

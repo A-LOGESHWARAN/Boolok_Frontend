@@ -386,25 +386,54 @@ const VideoItem = ({
         const raw = localStorage.getItem('boolok_following_users_set');
         if (raw) {
           const set = JSON.parse(raw);
-          return Boolean(set[authorId]);
+          const authorKeys = [
+            authorId,
+            item.author?._id,
+            item.author?.id,
+            item.author?.username,
+            typeof item.author?.username === 'string' ? item.author.username.toLowerCase() : null,
+          ].filter(Boolean) as string[];
+          return authorKeys.some((k) => Boolean(set[k]));
         }
       } catch (_) {}
     }
     return false;
   });
 
-  // Likes state - real database count
-  const initialLikes = typeof item.likesCount === 'number'
-    ? item.likesCount
-    : (Array.isArray(item.likes) ? item.likes.length : (typeof item.likes === 'number' ? item.likes : 0));
+  // Likes state - use shared boolok_post_likes cache for persistence across sessions
+  const initialLikes = (() => {
+    // Try shared post-likes cache first (same key used by feed.tsx)
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem('boolok_post_likes');
+        if (raw) {
+          const cache = JSON.parse(raw);
+          if (cache[item._id] && typeof cache[item._id].count === 'number') {
+            return cache[item._id].count;
+          }
+        }
+      } catch (_) {}
+    }
+    // Fall back to item data
+    return typeof item.likesCount === 'number'
+      ? item.likesCount
+      : (Array.isArray(item.likes) ? item.likes.length : (typeof item.likes === 'number' ? item.likes : 0));
+  })();
   const [likesCount, setLikesCount] = useState<number>(initialLikes);
   const [hasLiked, setHasLiked] = useState<boolean>(() => {
     if (Boolean(item.isLiked)) return true;
     if (Platform.OS === 'web') {
       try {
-        const raw = localStorage.getItem('boolok_liked_reels_set');
+        // Check shared post-likes cache
+        const raw = localStorage.getItem('boolok_post_likes');
         if (raw) {
-          const set = JSON.parse(raw);
+          const cache = JSON.parse(raw);
+          if (cache[item._id]) return Boolean(cache[item._id].likedByMe);
+        }
+        // Fallback to legacy liked-reels set
+        const raw2 = localStorage.getItem('boolok_liked_reels_set');
+        if (raw2) {
+          const set = JSON.parse(raw2);
           return Boolean(set[item._id]);
         }
       } catch (_) {}
@@ -612,31 +641,39 @@ const VideoItem = ({
     if (e && e.stopPropagation) e.stopPropagation();
 
     const nextState = !hasLiked;
+    const nextCount = nextState ? likesCount + 1 : Math.max(0, likesCount - 1);
     setHasLiked(nextState);
-    setLikesCount((prev) => (nextState ? prev + 1 : Math.max(0, prev - 1)));
+    setLikesCount(nextCount);
 
     if (nextState) {
       triggerHeartBurst();
     }
 
-    // Save to local cache
+    // ── Write to shared boolok_post_likes cache (same key as feed.tsx) ────────────
     try {
       if (Platform.OS === 'web') {
-        const raw = localStorage.getItem('boolok_liked_reels_set');
-        const set = raw ? JSON.parse(raw) : {};
-        if (nextState) set[item._id] = true;
-        else delete set[item._id];
-        localStorage.setItem('boolok_liked_reels_set', JSON.stringify(set));
+        const pRaw = localStorage.getItem('boolok_post_likes');
+        const pCache = pRaw ? JSON.parse(pRaw) : {};
+        pCache[item._id] = { count: nextCount, likedByMe: nextState };
+        localStorage.setItem('boolok_post_likes', JSON.stringify(pCache));
+        // Also keep legacy liked-reels set in sync
+        const lRaw = localStorage.getItem('boolok_liked_reels_set');
+        const lSet = lRaw ? JSON.parse(lRaw) : {};
+        if (nextState) lSet[item._id] = true; else delete lSet[item._id];
+        localStorage.setItem('boolok_liked_reels_set', JSON.stringify(lSet));
       } else {
-        const raw = await SecureStore.getItemAsync('boolok_liked_reels_set');
-        const set = raw ? JSON.parse(raw) : {};
-        if (nextState) set[item._id] = true;
-        else delete set[item._id];
-        await SecureStore.setItemAsync('boolok_liked_reels_set', JSON.stringify(set));
+        const pRaw = await SecureStore.getItemAsync('boolok_post_likes');
+        const pCache = pRaw ? JSON.parse(pRaw) : {};
+        pCache[item._id] = { count: nextCount, likedByMe: nextState };
+        await SecureStore.setItemAsync('boolok_post_likes', JSON.stringify(pCache));
+        const lRaw = await SecureStore.getItemAsync('boolok_liked_reels_set');
+        const lSet = lRaw ? JSON.parse(lRaw) : {};
+        if (nextState) lSet[item._id] = true; else delete lSet[item._id];
+        await SecureStore.setItemAsync('boolok_liked_reels_set', JSON.stringify(lSet));
       }
     } catch (_) {}
 
-    // Send to backend if valid DB reel
+    // ── Send to backend, then update cache with server-confirmed count ──────────
     try {
       const token = Platform.OS === 'web'
         ? localStorage.getItem('userToken')
@@ -649,16 +686,28 @@ const VideoItem = ({
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (res.data) {
-          if (typeof res.data.likesCount === 'number') {
-            setLikesCount(res.data.likesCount);
-          }
-          if (typeof res.data.isLiked === 'boolean') {
-            setHasLiked(res.data.isLiked);
-          }
+          const serverCount = typeof res.data.likesCount === 'number' ? res.data.likesCount : nextCount;
+          const serverLiked = typeof res.data.isLiked === 'boolean' ? res.data.isLiked : nextState;
+          setLikesCount(serverCount);
+          setHasLiked(serverLiked);
+          // Update cache with accurate server value
+          try {
+            if (Platform.OS === 'web') {
+              const pRaw2 = localStorage.getItem('boolok_post_likes');
+              const pCache2 = pRaw2 ? JSON.parse(pRaw2) : {};
+              pCache2[item._id] = { count: serverCount, likedByMe: serverLiked };
+              localStorage.setItem('boolok_post_likes', JSON.stringify(pCache2));
+            } else {
+              const pRaw2 = await SecureStore.getItemAsync('boolok_post_likes');
+              const pCache2 = pRaw2 ? JSON.parse(pRaw2) : {};
+              pCache2[item._id] = { count: serverCount, likedByMe: serverLiked };
+              await SecureStore.setItemAsync('boolok_post_likes', JSON.stringify(pCache2));
+            }
+          } catch (_) {}
         }
       }
     } catch (err) {
-      console.warn('Liked in local session');
+      console.warn('Liked in local session only');
     }
   };
 
@@ -668,21 +717,86 @@ const VideoItem = ({
     const nextFollow = !isFollowing;
     setIsFollowing(nextFollow);
 
+    // Store by every identifier (authorId, username, _id) so the profile Follow
+    // button reads the same state regardless of which key it checks.
+    const ids = [
+      authorId,
+      item.author?._id,
+      item.author?.id,
+      item.author?.username,
+      typeof item.author?.username === 'string' ? item.author.username.toLowerCase() : null,
+    ].filter(Boolean) as string[];
+
     try {
       if (Platform.OS === 'web') {
         const raw = localStorage.getItem('boolok_following_users_set');
         const set = raw ? JSON.parse(raw) : {};
-        if (nextFollow) set[authorId] = true;
-        else delete set[authorId];
+        ids.forEach((key) => {
+          if (nextFollow) set[key] = true;
+          else delete set[key];
+        });
         localStorage.setItem('boolok_following_users_set', JSON.stringify(set));
       } else {
         const raw = await SecureStore.getItemAsync('boolok_following_users_set');
         const set = raw ? JSON.parse(raw) : {};
-        if (nextFollow) set[authorId] = true;
-        else delete set[authorId];
+        ids.forEach((key) => {
+          if (nextFollow) set[key] = true;
+          else delete set[key];
+        });
         await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(set));
       }
     } catch (_) {}
+
+    // Persist to MongoDB database via API
+    try {
+      const token = Platform.OS === 'web'
+        ? localStorage.getItem('userToken')
+        : await SecureStore.getItemAsync('userToken');
+
+      if (token && authorId) {
+        const res = await axios.post(
+          `${API_BASE_URL}/api/users/${authorId}/follow`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (res.data) {
+          const serverFollowing = typeof res.data.isFollowing === 'boolean' ? res.data.isFollowing : nextFollow;
+          setIsFollowing(serverFollowing);
+          const targetUser = res.data.targetUser;
+          const confirmedKeys = [
+            authorId,
+            targetUser?.id,
+            targetUser?._id,
+            targetUser?.username,
+            typeof targetUser?.username === 'string' ? targetUser.username.toLowerCase() : null,
+            ...ids,
+          ].filter(Boolean) as string[];
+
+          try {
+            if (Platform.OS === 'web') {
+              const raw = localStorage.getItem('boolok_following_users_set');
+              const set = raw ? JSON.parse(raw) : {};
+              confirmedKeys.forEach((key) => {
+                if (serverFollowing) set[key] = true;
+                else delete set[key];
+              });
+              localStorage.setItem('boolok_following_users_set', JSON.stringify(set));
+            } else {
+              const raw = await SecureStore.getItemAsync('boolok_following_users_set');
+              const set = raw ? JSON.parse(raw) : {};
+              confirmedKeys.forEach((key) => {
+                if (serverFollowing) set[key] = true;
+                else delete set[key];
+              });
+              await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(set));
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to update follow in database, reverting:', err);
+      setIsFollowing(!nextFollow);
+    }
   };
 
   // Save / Bookmark Toggle
@@ -1755,6 +1869,36 @@ export default function InsightsScreen() {
 
         // Set real reels directly from database without hardcoded dummy additions
         setVideos(dbReels);
+      }
+
+      // Sync following set directly from MongoDB database
+      if (token) {
+        try {
+          const followRes = await axios.get(`${API_BASE_URL}/api/users/self/following`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (followRes.data && Array.isArray(followRes.data.following)) {
+            const dbFollowMap: Record<string, boolean> = {};
+            followRes.data.following.forEach((f: any) => {
+              if (!f) return;
+              if (f.id) dbFollowMap[f.id] = true;
+              if (f._id) dbFollowMap[f._id] = true;
+              if (f.username) {
+                dbFollowMap[f.username] = true;
+                dbFollowMap[f.username.toLowerCase()] = true;
+              }
+            });
+            if (Platform.OS === 'web') {
+              const raw = localStorage.getItem('boolok_following_users_set');
+              const merged = { ...(raw ? JSON.parse(raw) : {}), ...dbFollowMap };
+              localStorage.setItem('boolok_following_users_set', JSON.stringify(merged));
+            } else {
+              const raw = await SecureStore.getItemAsync('boolok_following_users_set');
+              const merged = { ...(raw ? JSON.parse(raw) : {}), ...dbFollowMap };
+              await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(merged));
+            }
+          }
+        } catch (_) {}
       }
     } catch (err) {
       console.warn('Could not load reels from server, using demo data.');

@@ -782,7 +782,7 @@ export default function BlueprintScreen() {
       </ScrollView>
 
       {/* Navigation footer */}
-      <View style={[styles.footer, { backgroundColor: theme.surfaceContainerLowest, borderTopColor: theme.outlineVariant, paddingBottom: isWide ? 16 : 90 }]}>
+      <View style={[styles.footer, { backgroundColor: theme.surfaceContainerLowest, borderTopColor: theme.outlineVariant, paddingVertical: 12, paddingHorizontal: spacing.md }]}>
         <Pressable onPress={goPrev} disabled={step === 0}
           style={({ pressed }) => [styles.backBtn, { borderColor: theme.outlineVariant, opacity: step === 0 ? 0.3 : pressed ? 0.7 : 1 }]}>
           <MaterialIcons name="chevron-left" size={20} color={theme.onSurface} />

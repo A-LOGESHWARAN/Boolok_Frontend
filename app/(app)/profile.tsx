@@ -1004,7 +1004,21 @@ export default function ProfessionalUserProfileScreen() {
 
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [isFollowingState, setIsFollowingState] = useState(false);
+  const [isFollowingState, setIsFollowingState] = useState<boolean>(() => {
+    // Read the shared localStorage follow cache so the profile Follow button
+    // reflects the same state as the insights VideoItem follow button.
+    if (!isSelf && Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem('boolok_following_users_set');
+        if (raw) {
+          const set = JSON.parse(raw);
+          const idStr = String(id || '');
+          return Boolean(set[idStr] || set[idStr.toLowerCase()]);
+        }
+      } catch (_) {}
+    }
+    return false;
+  });
   const [followerCountState, setFollowerCountState] = useState(0);
   const [followingCountState, setFollowingCountState] = useState(0);
   const [followBusy, setFollowBusy] = useState(false);
@@ -1137,77 +1151,72 @@ export default function ProfessionalUserProfileScreen() {
   const [postLikesTab, setPostLikesTab] = useState<string>('all');
   const [isLoadingPostLikes, setIsLoadingPostLikes] = useState(false);
 
+  const [isDeletingPost, setIsDeletingPost] = useState(false);
+
+  const handleDeletePost = async (postId: string) => {
+    if (!postId || isDeletingPost) return;
+
+    const doDelete = async () => {
+      setIsDeletingPost(true);
+      try {
+        const token = await getToken();
+        await axios.delete(`${API_BASE_URL}/api/feed/${postId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+
+        setData((prev: any) => {
+          if (!prev) return prev;
+          const updatedPosts = (prev.posts || []).filter((p: any) => p._id !== postId);
+          return {
+            ...prev,
+            posts: updatedPosts,
+            postCount: Math.max(0, (prev.postCount || updatedPosts.length + 1) - 1),
+          };
+        });
+
+        setIsPostDetailsModalOpen(false);
+        setSelectedPostDetails(null);
+        alertMsg('Post deleted successfully.');
+      } catch (err: any) {
+        console.error('Delete post error:', err);
+        alertMsg(err.response?.data?.message || 'Failed to delete post.');
+      } finally {
+        setIsDeletingPost(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm('Are you sure you want to delete this post? This cannot be undone.');
+      if (confirmed) {
+        await doDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Post',
+        'Are you sure you want to delete this post? This cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: doDelete },
+        ]
+      );
+    }
+  };
+
   const handleOpenPostDetailsModal = async (post: any) => {
     setSelectedPostDetails(post);
-    setPostDetailsLikesCount(post.likes?.length || 1);
-    setHasLikedPostDetails(false);
-    setPostDetailReaction(null);
+    const count = post.likesCount !== undefined ? post.likesCount : (Array.isArray(post.likes) ? post.likes.length : 0);
+    setPostDetailsLikesCount(count);
+    const viewerIdStr = String(viewer?.id || viewer?._id || '');
+    const isLiked = Array.isArray(post.likes) && post.likes.some((l: any) => {
+      const id = typeof l === 'string' ? l : (l?._id || l?.id || '');
+      return id === viewerIdStr || (viewer?.username && id === viewer.username);
+    });
+    setHasLikedPostDetails(Boolean(post.isLiked || isLiked));
+    setPostDetailReaction(post.isLiked || isLiked ? 'like' : null);
     setActivePostDetailReactionPicker(false);
 
-    const postAuthorName = (post.author?.fullName || post.author?.username || '').toLowerCase();
-    const isVigneshPost = postAuthorName.includes('vignesh') || post._id === 'vignesh-p-1' || post._id === 're-post-3';
-
-    const initialComments = Array.isArray(post.comments) && post.comments.length > 0
-      ? post.comments
-      : isVigneshPost
-        ? [
-          {
-            _id: 'vg-p-1',
-            author: { fullName: 'Sophia Sterling', username: 'sophia_luxury' },
-            text: 'Are 1/8th fractional house share syndicate slots still available for European co-owners? 🏡✨',
-            time: '09:15 am',
-          },
-          {
-            _id: 'vg-p-2',
-            author: { fullName: 'David Sterling', username: 'david_sterling' },
-            text: 'Bespoke co-ownership model on Beverly Hills estates provides exceptional capital preservation.',
-            time: '11:40 am',
-          },
-          {
-            _id: 'vg-p-3',
-            author: { fullName: 'Marcus Vance', username: 'marcus_vance' },
-            text: 'Deeded fractional title and seasonal syndicate booking structure looks turnkey. DM sent! 🔑',
-            time: '01:25 pm',
-          },
-        ]
-        : [
-        {
-          _id: 'c-1',
-          author: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' },
-          text: 'Exceptional cap rate and prime commercial footprint! This is exactly what institutional investors look for. 🏢🚀',
-          time: '06:10 pm',
-        },
-        {
-          _id: 'c-2',
-          author: { fullName: 'Shreekutti', username: 'shreekutti' },
-          text: 'Grade-A specs with strong tenant covenant structure. Solid long-term hold! 💼✨',
-          time: '07:10 pm',
-        },
-        {
-          _id: 'c-3',
-          author: { fullName: 'Mohammed Ajmal', username: 'ajmal' },
-          text: 'Turnkey acquisition with verified yield — exactly our portfolio criteria. DM for interest! 🔑',
-          time: '07:40 pm',
-        },
-        {
-          _id: 'c-4',
-          author: { fullName: 'Bavadharini RS', username: 'bavadharini_rs' },
-          text: 'The architectural finish and interior design elements are world-class on this asset. 🌿',
-          time: '08:10 pm',
-        },
-        {
-          _id: 'c-5',
-          author: { fullName: 'Akshat Commercials', username: 'the_akshtr_estate' },
-          text: 'OMR corridor premium commercial — this checks all our institutional grade requirements.',
-          time: '08:40 pm',
-        },
-        {
-          _id: 'c-6',
-          author: { fullName: 'Prasanth Properties', username: 'prasanth_properties' },
-          text: 'Is this available for syndication? Would love to discuss terms. 🏛️',
-          time: '08:55 pm',
-        },
-      ];
+    // Use REAL comments from post, or empty array if none
+    const initialComments = Array.isArray(post.comments) ? post.comments : [];
     setPostDetailsComments(initialComments);
     setIsPostDetailsModalOpen(true);
 
@@ -1217,11 +1226,18 @@ export default function ProfessionalUserProfileScreen() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (res.data?.post) {
-        if (Array.isArray(res.data.post.comments) && res.data.post.comments.length > 0) {
+        setSelectedPostDetails(res.data.post);
+        if (Array.isArray(res.data.post.comments)) {
           setPostDetailsComments(res.data.post.comments);
         }
-        if (Array.isArray(res.data.post.likes)) {
+        if (typeof res.data.post.likesCount === 'number') {
+          setPostDetailsLikesCount(res.data.post.likesCount);
+        } else if (Array.isArray(res.data.post.likes)) {
           setPostDetailsLikesCount(res.data.post.likes.length);
+        }
+        if (typeof res.data.post.isLiked === 'boolean') {
+          setHasLikedPostDetails(res.data.post.isLiked);
+          setPostDetailReaction(res.data.post.isLiked ? 'like' : null);
         }
       }
     } catch (e) {
@@ -1381,7 +1397,38 @@ export default function ProfessionalUserProfileScreen() {
         setData(res.data);
         setFollowerCountState(res.data.followerCount ?? res.data.user?.followerCount ?? 0);
         setFollowingCountState(res.data.followingCount ?? res.data.user?.followingCount ?? 0);
-        setIsFollowingState(Boolean(res.data.isFollowing));
+        const serverFollowing = Boolean(res.data.isFollowing);
+        setIsFollowingState(serverFollowing);
+
+        if (!isSelf) {
+          try {
+            const keys = [
+              lookupId,
+              res.data.user?.id,
+              res.data.user?._id,
+              res.data.user?.username,
+              typeof res.data.user?.username === 'string' ? res.data.user.username.toLowerCase() : null,
+            ].filter(Boolean) as string[];
+
+            if (Platform.OS === 'web') {
+              const raw = localStorage.getItem('boolok_following_users_set');
+              const set = raw ? JSON.parse(raw) : {};
+              keys.forEach((k) => {
+                if (serverFollowing) set[k] = true;
+                else delete set[k];
+              });
+              localStorage.setItem('boolok_following_users_set', JSON.stringify(set));
+            } else {
+              const raw = await SecureStore.getItemAsync('boolok_following_users_set');
+              const set = raw ? JSON.parse(raw) : {};
+              keys.forEach((k) => {
+                if (serverFollowing) set[k] = true;
+                else delete set[k];
+              });
+              await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(set));
+            }
+          } catch (_) {}
+        }
 
         if (res.data.user?.username && isSelf) {
           setUsernameInput(res.data.user.username);
@@ -1972,6 +2019,30 @@ export default function ProfessionalUserProfileScreen() {
     setIsFollowingState(nextState);
     setFollowerCountState((prev) => (nextState ? prev + 1 : Math.max(0, prev - 1)));
 
+    // ── Sync with shared follow cache (same key used by insights VideoItem) ──
+    try {
+      if (Platform.OS === 'web') {
+        const raw = localStorage.getItem('boolok_following_users_set');
+        const set = raw ? JSON.parse(raw) : {};
+        // Store by every possible identifier so VideoItem.isFollowing reads it correctly
+        const ids = [activeTarget, profileUser?.username, profileUser?._id, profileUser?.id].filter(Boolean);
+        ids.forEach((key: string) => {
+          if (nextState) set[key] = true;
+          else delete set[key];
+        });
+        localStorage.setItem('boolok_following_users_set', JSON.stringify(set));
+      } else {
+        const raw = await SecureStore.getItemAsync('boolok_following_users_set');
+        const set = raw ? JSON.parse(raw) : {};
+        const ids = [activeTarget, profileUser?.username, profileUser?._id, profileUser?.id].filter(Boolean);
+        ids.forEach((key: string) => {
+          if (nextState) set[key] = true;
+          else delete set[key];
+        });
+        await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(set));
+      }
+    } catch (_) {}
+
     try {
       const token = await getToken();
       const res = await axios.post(
@@ -1984,14 +2055,48 @@ export default function ProfessionalUserProfileScreen() {
           setFollowerCountState(res.data.followerCount);
         }
         if (typeof res.data.isFollowing === 'boolean') {
-          setIsFollowingState(res.data.isFollowing);
+          const serverFollowing = res.data.isFollowing;
+          setIsFollowingState(serverFollowing);
+          const targetUser = res.data.targetUser;
+          const confirmedKeys = [
+            activeTarget,
+            targetUser?.id,
+            targetUser?._id,
+            targetUser?.username,
+            typeof targetUser?.username === 'string' ? targetUser.username.toLowerCase() : null,
+            profileUser?.username,
+            profileUser?._id,
+            profileUser?.id,
+          ].filter(Boolean) as string[];
+
+          try {
+            if (Platform.OS === 'web') {
+              const raw = localStorage.getItem('boolok_following_users_set');
+              const set = raw ? JSON.parse(raw) : {};
+              confirmedKeys.forEach((key) => {
+                if (serverFollowing) set[key] = true;
+                else delete set[key];
+              });
+              localStorage.setItem('boolok_following_users_set', JSON.stringify(set));
+            } else {
+              const raw = await SecureStore.getItemAsync('boolok_following_users_set');
+              const set = raw ? JSON.parse(raw) : {};
+              confirmedKeys.forEach((key) => {
+                if (serverFollowing) set[key] = true;
+                else delete set[key];
+              });
+              await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(set));
+            }
+          } catch (_) {}
         }
       }
       if (isFollowersModalOpen) {
         handleOpenFollowersModal();
       }
     } catch (error: any) {
-      console.log('Follow state updated:', error.message);
+      console.warn('Failed to update follow in database, reverting:', error.message);
+      setIsFollowingState(!nextState);
+      setFollowerCountState((prev) => (!nextState ? prev + 1 : Math.max(0, prev - 1)));
     } finally {
       setFollowBusy(false);
     }
@@ -2031,11 +2136,13 @@ export default function ProfessionalUserProfileScreen() {
       ? data.reels
       : (Array.isArray(profileUser.reels) ? profileUser.reels : (fallbackUser.reels || [])));
 
-  const postsToDisplay = (data?.posts && data.posts.length > 0)
-    ? data.posts
-    : ((profileUser.posts && profileUser.posts.length > 0) ? profileUser.posts : (fallbackUser.posts || []));
+  const postsToDisplay = isSelf
+    ? (Array.isArray(data?.posts) ? data.posts : (Array.isArray(profileUser.posts) ? profileUser.posts : []))
+    : (Array.isArray(data?.posts)
+        ? data.posts
+        : (Array.isArray(profileUser.posts) ? profileUser.posts : (fallbackUser.posts || [])));
 
-  const postCount = data?.postCount !== undefined ? data.postCount : postsToDisplay.length;
+  const postCount = postsToDisplay.length;
   const reelCount = reelsToDisplay.length;
   const followerCount = followerCountState;
   const followingCount = followingCountState;
@@ -2768,51 +2875,99 @@ export default function ProfessionalUserProfileScreen() {
           {activeTab === 'properties' ? (
             posts && posts.length > 0 ? (
               <View style={[styles.propertiesGrid, isMobile && { gap: 12 }]}>
-                {posts.map((post: any) => (
-                  <Pressable
-                    key={post._id}
-                    onPress={() => handleOpenPostDetailsModal(post)}
-                    style={({ pressed, hovered }: any) => [
-                      styles.propertyCard,
-                      isMobile && { width: '100%', minWidth: '100%' },
-                      { backgroundColor: cardBg, borderColor, cursor: 'pointer' },
-                      (pressed || hovered) && { borderColor: goldPrimary, transform: [{ translateY: -2 }] },
-                    ]}
-                  >
-                    <Image
-                      source={{
-                        uri: resolvePropertyImage(post),
-                      }}
-                      style={[styles.propertyImage, isMobile && { height: 210 }]}
-                      resizeMode="cover"
-                    />
-                    <View style={[styles.propertyDetailsBox, { backgroundColor: cardBg }]}>
-                      <Text style={[styles.propertyPriceText, { color: goldPrimary }]}>
-                        {post.price || '$8,900,000'}
-                      </Text>
-                      <Text style={[styles.propertyTitleText, { color: textPrimary }]} numberOfLines={1}>
-                        {post.title || (post.content ? post.content.slice(0, 45) + '...' : 'Luxury Waterfront Residence')}
-                      </Text>
-                      <Text style={[styles.propertyLocationText, { color: textMuted }]}>
-                        📍 {post.location || 'Prime Commercial Corridor'}
-                      </Text>
-                      <Text style={[styles.propertySpecsText, { color: textSecondary }]}>
-                        {post.specs || 'Turnkey Acquisition · High Cap Rate'}
-                      </Text>
+                {posts.map((post: any) => {
+                  const authorId = post.author?._id || post.author?.id || (typeof post.author === 'string' ? post.author : '');
+                  const viewerId = viewer?.id || viewer?._id || '';
+                  const isPostOwner = isSelf || (authorId && (authorId === viewerId || (viewer?.username && authorId === viewer.username)));
+                  const postLikesCount = post.likesCount !== undefined ? post.likesCount : (Array.isArray(post.likes) ? post.likes.length : 0);
+                  const postCommentsCount = post.commentsCount !== undefined ? post.commentsCount : (Array.isArray(post.comments) ? post.comments.length : 0);
+                  const postDescription = post.content || post.description || post.title || 'Property Post';
 
-                      <View style={styles.propertyFooterRow}>
-                        <Text style={styles.propertyLikesText}>❤️ {post.likes?.length || 1}</Text>
-                        <Text style={styles.propertyCommentsText}>💬 {post.comments?.length || 6}</Text>
+                  return (
+                    <Pressable
+                      key={post._id}
+                      onPress={() => handleOpenPostDetailsModal(post)}
+                      style={({ pressed, hovered }: any) => [
+                        styles.propertyCard,
+                        isMobile && { width: '100%', minWidth: '100%' },
+                        { backgroundColor: cardBg, borderColor, cursor: 'pointer', position: 'relative' },
+                        (pressed || hovered) && { borderColor: goldPrimary, transform: [{ translateY: -2 }] },
+                      ]}
+                    >
+                      {/* Delete button on card for post owner alone */}
+                      {isPostOwner && (
+                        <Pressable
+                          onPress={(e: any) => {
+                            e?.stopPropagation?.();
+                            handleDeletePost(post._id);
+                          }}
+                          style={({ pressed, hovered }: any) => [
+                            {
+                              position: 'absolute',
+                              top: 10,
+                              right: 10,
+                              backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                              padding: 6,
+                              borderRadius: 20,
+                              borderWidth: 1,
+                              borderColor: 'rgba(239, 68, 68, 0.7)',
+                              zIndex: 10,
+                            },
+                            (pressed || hovered) && { backgroundColor: '#ef4444' },
+                          ]}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <MaterialIcons name="delete-outline" size={17} color="#ffffff" />
+                        </Pressable>
+                      )}
+
+                      <Image
+                        source={{
+                          uri: resolvePropertyImage(post),
+                        }}
+                        style={[styles.propertyImage, isMobile && { height: 210 }]}
+                        resizeMode="cover"
+                      />
+                      <View style={[styles.propertyDetailsBox, { backgroundColor: cardBg }]}>
+                        {post.price ? (
+                          <Text style={[styles.propertyPriceText, { color: goldPrimary }]}>
+                            {post.price}
+                          </Text>
+                        ) : null}
+                        <Text style={[styles.propertyTitleText, { color: textPrimary }]} numberOfLines={2}>
+                          {postDescription}
+                        </Text>
+                        {post.location ? (
+                          <Text style={[styles.propertyLocationText, { color: textMuted }]}>
+                            📍 {post.location}
+                          </Text>
+                        ) : null}
+                        {post.specs ? (
+                          <Text style={[styles.propertySpecsText, { color: textSecondary }]}>
+                            {post.specs}
+                          </Text>
+                        ) : null}
+
+                        <View style={styles.propertyFooterRow}>
+                          <Text style={styles.propertyLikesText}>❤️ {postLikesCount}</Text>
+                          <Text style={styles.propertyCommentsText}>💬 {postCommentsCount}</Text>
+                        </View>
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                    </Pressable>
+                  );
+                })}
               </View>
             ) : (
               <View style={{ paddingVertical: 48, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: cardBg, borderRadius: 16, borderWidth: 1, borderColor, width: '100%', marginVertical: 8 }}>
                 <MaterialCommunityIcons name="office-building-outline" size={44} color={textMuted} style={{ marginBottom: 12 }} />
-                <Text style={{ color: textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 6 }}>No properties & listings available for now</Text>
-                <Text style={{ color: textMuted, fontSize: 13, textAlign: 'center' }}>This advisor has not listed any commercial or residential properties yet.</Text>
+                <Text style={{ color: textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 6 }}>
+                  {isSelf ? 'You have not posted any properties yet' : 'No properties & listings available for now'}
+                </Text>
+                <Text style={{ color: textMuted, fontSize: 13, textAlign: 'center' }}>
+                  {isSelf
+                    ? 'Use the "+ Create Post" box above or the Social Feed to publish your properties and market insights.'
+                    : 'This advisor has not listed any commercial or residential properties yet.'}
+                </Text>
               </View>
             )
           ) : (
@@ -3360,16 +3515,54 @@ export default function ProfessionalUserProfileScreen() {
             <View style={{ width: '100%', maxWidth: 640, backgroundColor: '#09111e', borderRadius: 16, borderWidth: 1, borderColor: '#1a273c', maxHeight: '92%', overflow: 'hidden' }}>
               {/* Modal Header */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#162338' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <UserAvatar user={profileUser} size={36} />
-                  <View>
-                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>{profileUser.fullName}</Text>
-                    <Text style={{ color: '#8b9bb4', fontSize: 11 }}>@{profileUser.username} · Property Listing</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 10 }}>
+                  <UserAvatar user={selectedPostDetails?.author || profileUser} size={36} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }} numberOfLines={1}>
+                      {selectedPostDetails?.author?.fullName || profileUser.fullName}
+                    </Text>
+                    <Text style={{ color: '#8b9bb4', fontSize: 11 }} numberOfLines={1}>
+                      @{selectedPostDetails?.author?.username || profileUser.username} · Property Post
+                    </Text>
                   </View>
                 </View>
-                <Pressable onPress={() => setIsPostDetailsModalOpen(false)} style={{ padding: 6 }}>
-                  <MaterialIcons name="close" size={22} color="#8b9bb4" />
-                </Pressable>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {(() => {
+                    const authorId = selectedPostDetails?.author?._id || selectedPostDetails?.author?.id || (typeof selectedPostDetails?.author === 'string' ? selectedPostDetails.author : '');
+                    const viewerId = viewer?.id || viewer?._id || '';
+                    const isOwner = isSelf || (authorId && (authorId === viewerId || (viewer?.username && authorId === viewer.username)));
+                    if (!isOwner) return null;
+
+                    return (
+                      <Pressable
+                        onPress={() => handleDeletePost(selectedPostDetails?._id)}
+                        disabled={isDeletingPost}
+                        style={({ pressed, hovered }: any) => [
+                          {
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 5,
+                            backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                            borderWidth: 1,
+                            borderColor: '#ef4444',
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            borderRadius: 8,
+                          },
+                          (pressed || hovered) && { backgroundColor: '#ef4444' },
+                        ]}
+                      >
+                        <MaterialIcons name="delete-outline" size={16} color="#ef4444" />
+                        <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '700' }}>
+                          {isDeletingPost ? 'Deleting...' : 'Delete'}
+                        </Text>
+                      </Pressable>
+                    );
+                  })()}
+                  <Pressable onPress={() => setIsPostDetailsModalOpen(false)} style={{ padding: 6 }}>
+                    <MaterialIcons name="close" size={22} color="#8b9bb4" />
+                  </Pressable>
+                </View>
               </View>
 
               <ScrollView showsVerticalScrollIndicator={false}>
@@ -3382,26 +3575,29 @@ export default function ProfessionalUserProfileScreen() {
                   resizeMode="cover"
                 />
 
-                {/* Price & Location Info */}
+                {/* Description & Property Info */}
                 <View style={{ padding: 18 }}>
-                  <Text style={{ fontSize: 24, fontWeight: '900', color: goldPrimary }}>
-                    {selectedPostDetails?.price || '$8,900,000'}
-                  </Text>
-                  <Text style={{ fontSize: 16, fontWeight: '800', color: '#ffffff', marginTop: 4 }}>
-                    {selectedPostDetails?.title || (selectedPostDetails?.content ? selectedPostDetails.content.slice(0, 50) : 'Luxury Prime Commercial Asset')}
-                  </Text>
-                  <Text style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
-                    📍 {selectedPostDetails?.location || 'Prime Commercial Corridor'}
-                  </Text>
-                  <Text style={{ fontSize: 12.5, color: '#38bdf8', marginTop: 2, fontWeight: '600' }}>
-                    {selectedPostDetails?.specs || 'Turnkey Acquisition · High Cap Rate'}
+                  {selectedPostDetails?.price ? (
+                    <Text style={{ fontSize: 24, fontWeight: '900', color: goldPrimary }}>
+                      {selectedPostDetails.price}
+                    </Text>
+                  ) : null}
+
+                  <Text style={{ fontSize: 15, color: '#ffffff', lineHeight: 22, marginTop: 4 }}>
+                    {selectedPostDetails?.content || selectedPostDetails?.title || 'Property Post'}
                   </Text>
 
-                  {selectedPostDetails?.content && (
-                    <Text style={{ fontSize: 13.5, color: '#cbd5e1', lineHeight: 20, marginTop: 12, borderTopWidth: 1, borderTopColor: '#162338', paddingTop: 12 }}>
-                      {selectedPostDetails.content}
+                  {selectedPostDetails?.location ? (
+                    <Text style={{ fontSize: 13, color: '#94a3b8', marginTop: 6 }}>
+                      📍 {selectedPostDetails.location}
                     </Text>
-                  )}
+                  ) : null}
+
+                  {selectedPostDetails?.specs ? (
+                    <Text style={{ fontSize: 12.5, color: '#38bdf8', marginTop: 2, fontWeight: '600' }}>
+                      {selectedPostDetails.specs}
+                    </Text>
+                  ) : null}
 
                   {/* Likes Summary Bar (Clickable to view who liked) */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#162338', marginTop: 14 }}>
@@ -3418,7 +3614,11 @@ export default function ProfessionalUserProfileScreen() {
                         </View>
                       </View>
                       <Text style={{ fontSize: 12.5, color: '#93c5fd', textDecorationLine: 'underline', fontWeight: '600' }}>
-                        Akshat Commercials and 5 others
+                        {postDetailsLikesCount > 0
+                          ? (hasLikedPostDetails
+                              ? (postDetailsLikesCount === 1 ? 'Liked by you' : `Liked by you and ${postDetailsLikesCount - 1} other${postDetailsLikesCount > 2 ? 's' : ''}`)
+                              : `${postDetailsLikesCount} member${postDetailsLikesCount > 1 ? 's' : ''} liked this`)
+                          : '0 likes'}
                       </Text>
                     </Pressable>
 
@@ -3471,62 +3671,30 @@ export default function ProfessionalUserProfileScreen() {
                     </View>
 
                     {/* Comments List */}
-                    {postDetailsComments.filter((c: any) => {
-                      const a = c.author || c.user || {};
-                      const name = (a.fullName || a.username || c.fullName || '').toLowerCase();
-                      return name !== 'advisor';
-                    }).map((c: any, cIdx: number) => {
-                      const cAuthor = c.author || c.user || {};
-                      let rawName = cAuthor.fullName || cAuthor.username || c.fullName || (typeof c.author === 'string' ? c.author : '') || (typeof c.user === 'string' ? c.user : '');
-                      const commentBody = c.text || '';
-                      const bodyLower = (commentBody || '').toLowerCase();
-
-                      if (!rawName || /^[0-9a-fA-F]{24}$/.test(rawName) || rawName.startsWith('6a8') || rawName.toLowerCase() === 'member' || rawName.toLowerCase() === 'advisor') {
-                        if (bodyLower.includes('cap rate') && bodyLower.includes('institutional')) rawName = 'Logeshwaran A';
-                        else if (bodyLower.includes('tenant covenant') || bodyLower.includes('specs')) rawName = 'Shreekutti';
-                        else if (bodyLower.includes('turnkey acquisition') || bodyLower.includes('verified yield')) rawName = 'Mohammed Ajmal';
-                        else if (bodyLower.includes('architectural finish') || bodyLower.includes('interior design')) rawName = 'Bavadharini RS';
-                        else if (bodyLower.includes('omr corridor') || bodyLower.includes('institutional grade')) rawName = 'Akshat Commercials';
-                        else if (bodyLower.includes('syndication') || bodyLower.includes('discuss terms')) rawName = 'Prasanth Properties';
-                        else if (bodyLower.includes('fractional house share') || bodyLower.includes('european co-owners')) rawName = 'Sophia Sterling';
-                        else if (bodyLower.includes('bespoke co-ownership') || bodyLower.includes('capital preservation')) rawName = 'David Sterling';
-                        else if (bodyLower.includes('deeded fractional title') || bodyLower.includes('dm sent')) rawName = 'Marcus Vance';
-                        else {
-                          const fallbackNames = ['Logeshwaran A', 'Shreekutti', 'Mohammed Ajmal', 'Bavadharini RS', 'Akshat Commercials', 'Prasanth Properties'];
-                          rawName = fallbackNames[cIdx % fallbackNames.length];
-                        }
-                      }
-
-                      const cName = rawName;
-                      return (
-                        <View key={c._id || cIdx} style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-                          <Pressable
-                            onPress={() => handleNavigateToCommentAuthor(cAuthor, cName)}
-                            style={({ pressed, hovered }: any) => [
-                              (pressed || hovered) && { opacity: 0.8 },
-                            ]}
-                          >
-                            <UserAvatar user={cAuthor?.profilePicture ? cAuthor : { fullName: cName }} size={34} />
-                          </Pressable>
-                          <View style={{ flex: 1, backgroundColor: '#131e30', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#1b2a40' }}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                              <Pressable
-                                onPress={() => handleNavigateToCommentAuthor(cAuthor, cName)}
-                                style={({ pressed, hovered }: any) => [
-                                  (pressed || hovered) && { opacity: 0.7 },
-                                ]}
-                              >
-                                <Text style={{ color: goldPrimary, fontWeight: '800', fontSize: 13, textDecorationLine: 'underline' }}>
+                    {postDetailsComments.length > 0 ? (
+                      postDetailsComments.map((c: any, cIdx: number) => {
+                        const cAuthor = c.author || c.user || {};
+                        const cName = cAuthor.fullName || cAuthor.username || c.fullName || 'Member';
+                        return (
+                          <View key={c._id || cIdx} style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+                            <UserAvatar user={cAuthor} size={34} />
+                            <View style={{ flex: 1, backgroundColor: '#131e30', padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#1b2a40' }}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                <Text style={{ color: goldPrimary, fontWeight: '800', fontSize: 13 }}>
                                   {cName}
                                 </Text>
-                              </Pressable>
-                              <Text style={{ color: '#64748b', fontSize: 10 }}>{c.time || '1h ago'}</Text>
+                                <Text style={{ color: '#64748b', fontSize: 10 }}>{c.time || 'Just now'}</Text>
+                              </View>
+                              <Text style={{ color: '#e2e8f0', fontSize: 12.5, lineHeight: 17 }}>{c.text}</Text>
                             </View>
-                            <Text style={{ color: '#e2e8f0', fontSize: 12.5, lineHeight: 17 }}>{c.text}</Text>
                           </View>
-                        </View>
-                      );
-                    })}
+                        );
+                      })
+                    ) : (
+                      <View style={{ paddingVertical: 18, alignItems: 'center' }}>
+                        <Text style={{ color: '#64748b', fontSize: 12.5 }}>No comments on this post yet. Be the first to comment!</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               </ScrollView>

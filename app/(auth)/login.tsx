@@ -43,11 +43,7 @@ export default function LoginScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= MD_BREAKPOINT;
 
-  const [loginMethod, setLoginMethod] = useState<'username' | 'email'>('username');
   const [username, setUsername] = useState('');
-  const [emailOtpAddress, setEmailOtpAddress] = useState('');
-  const [otp, setOtp] = useState('');
-  const [isOtpSent, setIsOtpSent] = useState(false);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitState, setSubmitState] = useState<SubmitState>('idle');
@@ -84,46 +80,20 @@ export default function LoginScreen() {
   });
   // ────────────────────────────────────────────────────────────────
 
-  const canSubmitUsername = username.trim().length > 0 && password.length > 0 && submitState === 'idle';
-  const canSendOtp = emailOtpAddress.trim().length > 0 && submitState === 'idle';
-  const canSubmitEmail = canSendOtp && otp.trim().length > 0 && submitState === 'idle';
-
-  const handleSendOtp = async () => {
-    if (!canSendOtp) return;
-    setSubmitState('loading');
-    try {
-      await axios.post(`${API_BASE_URL}/api/auth/send-login-otp`, { email: emailOtpAddress });
-      setOtp('');
-      setIsOtpSent(true);
-      setSubmitState('idle');
-      alert(`A 6-digit verification code has been sent to ${emailOtpAddress}. Please check your Gmail Primary inbox or spam folder.`);
-    } catch (error: any) {
-      console.error('Failed to send login OTP:', error.response?.data?.message || error.message);
-      setSubmitState('idle');
-      alert(error.response?.data?.message || 'Failed to send login code. Please verify your email.');
-    }
-  };
+  const canSubmit = username.trim().length > 0 && password.length > 0 && submitState === 'idle';
 
   // Mirrors: Authenticating... -> Access Granted -> navigate
   const handleSubmit = async () => {
-    if (loginMethod === 'username' && !canSubmitUsername) return;
-    if (loginMethod === 'email' && !canSubmitEmail) return;
+    if (!canSubmit) return;
 
     setSubmitState('loading');
 
     try {
-      let response;
-      if (loginMethod === 'username') {
-        response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
-          username,
-          password
-        });
-      } else {
-        response = await axios.post(`${API_BASE_URL}/api/auth/verify-login-otp`, {
-          email: emailOtpAddress,
-          otp
-        });
-      }
+      const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
+        username: username.trim(),
+        identifier: username.trim(),
+        password,
+      });
 
       if (response.data.token) {
         await signIn(response.data.token, response.data.user);
@@ -141,10 +111,10 @@ export default function LoginScreen() {
 
   const buttonLabel =
     submitState === 'loading'
-      ? (loginMethod === 'email' && !isOtpSent ? 'Sending OTP...' : 'Authenticating...')
+      ? 'Authenticating...'
       : submitState === 'success'
         ? 'Access Granted'
-        : (loginMethod === 'email' && !isOtpSent ? 'Send OTP' : 'Sign In');
+        : 'Sign In';
 
   return (
     <ScrollView
@@ -211,123 +181,62 @@ export default function LoginScreen() {
                   </Text>
                 </View>
 
-                {/* Method Toggle */}
-                <View style={styles.toggleRow}>
-                  <Pressable
-                    style={[styles.toggleBtn, loginMethod === 'username' && styles.toggleBtnActive]}
-                    onPress={() => setLoginMethod('username')}
-                  >
-                    <Text style={[typography.labelMd, loginMethod === 'username' ? { color: colors.onPrimary } : { color: colors.onSurface }]}>Email or Username</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.toggleBtn, loginMethod === 'email' && styles.toggleBtnActive]}
-                    onPress={() => setLoginMethod('email')}
-                  >
-                    <Text style={[typography.labelMd, loginMethod === 'email' ? { color: colors.onPrimary } : { color: colors.onSurface }]}>Email OTP</Text>
-                  </Pressable>
+                {/* Username or Email */}
+                <View style={{ marginBottom: spacing.md }}>
+                  <Text style={[typography.labelMd, { color: colors.onSurface, marginBottom: spacing.xs }]}>
+                    Email or Username
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your email or username"
+                    placeholderTextColor={colors.outline}
+                    value={username}
+                    onChangeText={setUsername}
+                    autoCapitalize="none"
+                    onFocus={() => setFocused(true)}
+                    onBlur={() => setFocused(false)}
+                  />
                 </View>
 
-                {loginMethod === 'username' ? (
-                  <>
-                    {/* Username or Email */}
-                    <View style={{ marginBottom: spacing.md }}>
-                      <Text style={[typography.labelMd, { color: colors.onSurface, marginBottom: spacing.xs }]}>
-                        Email or Username
-                      </Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Enter your email or username"
-                        placeholderTextColor={colors.outline}
-                        value={username}
-                        onChangeText={setUsername}
-                        autoCapitalize="none"
-                        onFocus={() => setFocused(true)}
-                        onBlur={() => setFocused(false)}
+                {/* Password */}
+                <View style={{ marginBottom: spacing.md }}>
+                  <View style={styles.passwordLabelRow}>
+                    <Text style={[typography.labelMd, { color: colors.onSurface }]}>Password</Text>
+                    <Pressable onPress={() => router.push('/(auth)/forgot-password')}>
+                      <Text style={[typography.labelMd, styles.link]}>Forgot Password?</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.passwordRow}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      placeholder="••••••••"
+                      placeholderTextColor={colors.outline}
+                      value={password}
+                      onChangeText={setPassword}
+                      secureTextEntry={!showPassword}
+                      onFocus={() => setFocused(true)}
+                      onBlur={() => setFocused(false)}
+                    />
+                    <Pressable style={styles.eyeButton} onPress={() => setShowPassword((v) => !v)}>
+                      <MaterialIcons
+                        name={showPassword ? 'visibility-off' : 'visibility'}
+                        size={22}
+                        color={colors.onSurfaceVariant}
                       />
-                    </View>
-
-                    {/* Password */}
-                    <View style={{ marginBottom: spacing.md }}>
-                      <View style={styles.passwordLabelRow}>
-                        <Text style={[typography.labelMd, { color: colors.onSurface }]}>Password</Text>
-                        <Pressable onPress={() => router.push('/(auth)/forgot-password')}>
-                          <Text style={[typography.labelMd, styles.link]}>Forgot Password?</Text>
-                        </Pressable>
-                      </View>
-                      <View style={styles.passwordRow}>
-                        <TextInput
-                          style={[styles.input, { flex: 1 }]}
-                          placeholder="••••••••"
-                          placeholderTextColor={colors.outline}
-                          value={password}
-                          onChangeText={setPassword}
-                          secureTextEntry={!showPassword}
-                          onFocus={() => setFocused(true)}
-                          onBlur={() => setFocused(false)}
-                        />
-                        <Pressable style={styles.eyeButton} onPress={() => setShowPassword((v) => !v)}>
-                          <MaterialIcons
-                            name={showPassword ? 'visibility-off' : 'visibility'}
-                            size={22}
-                            color={colors.onSurfaceVariant}
-                          />
-                        </Pressable>
-                      </View>
-                    </View>
-                  </>
-                ) : (
-                  <>
-                    {/* Email OTP */}
-                    <View style={{ marginBottom: spacing.md }}>
-                      <Text style={[typography.labelMd, { color: colors.onSurface, marginBottom: spacing.xs }]}>
-                        Email Address
-                      </Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Enter your email address"
-                        placeholderTextColor={colors.outline}
-                        value={emailOtpAddress}
-                        onChangeText={setEmailOtpAddress}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        onFocus={() => setFocused(true)}
-                        onBlur={() => setFocused(false)}
-                      />
-                    </View>
-
-                    {/* OTP */}
-                    {isOtpSent && (
-                      <View style={{ marginBottom: spacing.md }}>
-                        <Text style={[typography.labelMd, { color: colors.onSurface, marginBottom: spacing.xs }]}>
-                          Enter OTP
-                        </Text>
-                        <TextInput
-                          style={styles.input}
-                          placeholder="Enter the code sent to your email"
-                          placeholderTextColor={colors.outline}
-                          value={otp}
-                          onChangeText={setOtp}
-                          keyboardType="number-pad"
-                          onFocus={() => setFocused(true)}
-                          onBlur={() => setFocused(false)}
-                        />
-                      </View>
-                    )}
-                  </>
-                )}
+                    </Pressable>
+                  </View>
+                </View>
 
                 {/* Submit */}
                 <Pressable
                   style={[
                     styles.submitButton,
                     submitState === 'success' && { backgroundColor: colors.success },
-                    ((loginMethod === 'username' && !canSubmitUsername) ||
-                      (loginMethod === 'email' && !(isOtpSent ? canSubmitEmail : canSendOtp))) &&
-                    submitState === 'idle' && { opacity: 0.5 },
+                    !canSubmit && submitState === 'idle' && { opacity: 0.5 },
                     submitState === 'loading' && { opacity: 0.9 },
                   ]}
-                  onPress={loginMethod === 'email' && !isOtpSent ? handleSendOtp : handleSubmit}
-                  disabled={submitState !== 'idle'}
+                  onPress={handleSubmit}
+                  disabled={submitState !== 'idle' || !canSubmit}
                 >
                   {submitState === 'loading' ? (
                     <View style={styles.loadingButtonContent}>
@@ -443,24 +352,6 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    backgroundColor: colors.surfaceContainerLowest,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.outlineVariant,
-    marginBottom: spacing.md,
-    overflow: 'hidden',
-  },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toggleBtnActive: {
-    backgroundColor: colors.primary,
   },
   formCardFocused: {
     shadowColor: colors.primary,
