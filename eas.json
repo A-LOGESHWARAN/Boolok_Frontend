@@ -19,8 +19,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://rn-boolok.onrender.com",
-        "EXPO_PUBLIC_API_URL_NATIVE": "https://rn-boolok.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://boolok-backend.onrender.com",
+        "EXPO_PUBLIC_API_URL_NATIVE": "https://boolok-backend.onrender.com",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "166853460121-jdlugm3ncga9qu4vk3b45lda5onusup2.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID": "166853460121-ue9d43578k6i5211b46bfsoefo81f6di.apps.googleusercontent.com"
       }
@@ -28,8 +28,8 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://rn-boolok.onrender.com",
-        "EXPO_PUBLIC_API_URL_NATIVE": "https://rn-boolok.onrender.com",
+        "EXPO_PUBLIC_API_URL": "https://boolok-backend.onrender.com",
+        "EXPO_PUBLIC_API_URL_NATIVE": "https://boolok-backend.onrender.com",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "166853460121-jdlugm3ncga9qu4vk3b45lda5onusup2.apps.googleusercontent.com",
         "EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID": "166853460121-ue9d43578k6i5211b46bfsoefo81f6di.apps.googleusercontent.com"
       }
