@@ -49,6 +49,6 @@ yarn-error.*
 .vercel
 .env*
 
-# Google / Firebase config files — contain API keys, NEVER commit these
-google-services.json
+# Google / Firebase config files
+# Note: google-services.json must be tracked so EAS Cloud Builder can bundle it
 GoogleService-Info.plist
