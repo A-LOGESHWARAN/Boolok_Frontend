@@ -26,7 +26,7 @@ import LoadingScreen from '../../components/LoadingScreen';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import BoolokLogo from '../../components/BoolokLogo';
-import { API_BASE_URL } from '../../lib/api';
+import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
 
 // ── Real Estate & Buildings For Sale News ───────────────────────────────────
 const DEFAULT_REAL_ESTATE_NEWS = [
@@ -480,6 +480,7 @@ export default function ProfessionalSocialFeedScreen() {
   const [isNewslettersModalOpen, setIsNewslettersModalOpen] = useState(false);
   const [isAuctionsModalOpen, setIsAuctionsModalOpen] = useState(false);
   const [selectedNewsStory, setSelectedNewsStory] = useState<any>(null);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
   const getToken = async () =>
     Platform.OS === 'web' ? localStorage.getItem('userToken') : await SecureStore.getItemAsync('userToken');
@@ -1472,16 +1473,16 @@ export default function ProfessionalSocialFeedScreen() {
               const commentsList = Array.isArray(post.comments) ? post.comments : [];
               const isCommentOpen = activeCommentPostId === post._id;
 
-              // Resolve Media image URLs
-              const mediaList = Array.isArray(post.mediaUrls)
+              // Resolve Media image URLs safely
+              const rawMedia = Array.isArray(post.mediaUrls) && post.mediaUrls.length > 0
                 ? post.mediaUrls
                 : post.mediaUrl
-                ? [
-                    post.mediaUrl.startsWith('http') || post.mediaUrl.startsWith('data:')
-                      ? post.mediaUrl
-                      : `${API_BASE_URL}${post.mediaUrl}`,
-                  ]
+                ? [post.mediaUrl]
                 : [];
+
+              const mediaList = rawMedia
+                .map((m: any) => resolveImageUrl(m))
+                .filter(Boolean) as string[];
 
               return (
                 <View
@@ -1547,8 +1548,12 @@ export default function ProfessionalSocialFeedScreen() {
                   </View>
 
                   {/* Post Text Description */}
-                  {post.content ? (
+                  {(post.content && post.content.trim()) ? (
                     <Text style={styles.postBodyContent}>{post.content}</Text>
+                  ) : mediaList.length > 0 ? (
+                    <Text style={[styles.postBodyContent, { fontStyle: 'italic', opacity: 0.9 }]}>
+                      Prime Real Estate Asset & Investment Opportunity
+                    </Text>
                   ) : null}
 
                   {/* Multi-Image / Media Grid */}
@@ -1556,18 +1561,32 @@ export default function ProfessionalSocialFeedScreen() {
                     <View style={styles.postMediaContainer}>
                       {mediaList.length === 1 ? (
                         <Image
-                          source={{ uri: mediaList[0] }}
+                          source={{
+                            uri: failedImages[post._id]
+                              ? 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200'
+                              : mediaList[0]
+                          }}
                           style={styles.singlePostImage}
                           resizeMode="cover"
+                          onError={() => {
+                            setFailedImages((prev) => ({ ...prev, [post._id]: true }));
+                          }}
                         />
                       ) : (
                         <View style={styles.multiImageRow}>
                           {mediaList.slice(0, 2).map((imgUrl: string, idx: number) => (
                             <Image
                               key={idx}
-                              source={{ uri: imgUrl }}
+                              source={{
+                                uri: failedImages[`${post._id}-${idx}`]
+                                  ? 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200'
+                                  : imgUrl
+                              }}
                               style={styles.multiPostImage}
                               resizeMode="cover"
+                              onError={() => {
+                                setFailedImages((prev) => ({ ...prev, [`${post._id}-${idx}`]: true }));
+                              }}
                             />
                           ))}
                         </View>

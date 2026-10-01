@@ -13,7 +13,9 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Alert,
+  Keyboard,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -39,6 +41,7 @@ const COMMUNITY_MEMBERS_DIRECTORY = [
 export default function MessagesScreen() {
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { user: currentUser, token } = useAuth();
   const { theme, isDark } = useTheme();
@@ -64,13 +67,41 @@ export default function MessagesScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<any>(null);
   const activeConversationRef = useRef<any>(null);
 
+  // Keyboard show/hide listener to ensure message place stays visible and scrolls smoothly
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height || 0);
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
   useEffect(() => {
     activeConversationRef.current = activeConversation;
+    // Reflect active conversation in router params so layout hides bottom bar on mobile
+    if (activeConversation?._id || activeConversation?.id) {
+      const convId = String(activeConversation._id || activeConversation.id);
+      router.setParams({ conv: convId });
+    }
   }, [activeConversation]);
 
   // Clear state and reload on user account switch
@@ -361,26 +392,28 @@ export default function MessagesScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: bgDark }]}>
-      {/* ── TOP EXECUTIVE BANNER HEADER ── */}
-      <View style={[styles.headerBanner, { backgroundColor: cardBg, borderBottomColor: borderColor }]}>
-        <View style={styles.headerLeft}>
-          <Pressable onPress={() => router.push('/(app)/feed')} style={styles.backBtn}>
-            <MaterialIcons name="arrow-back" size={20} color={textPrimary} />
-          </Pressable>
-          <View style={styles.titleWrapper}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <BoolokLogo size={18} color={goldPrimary} />
-              <Text style={[styles.headerTitle, { color: textPrimary }]}>Boolok Real Estate Messages</Text>
-            </View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <View style={[styles.onlineDot, { backgroundColor: isConnected ? '#22c55e' : '#eab308' }]} />
-              <Text style={[styles.headerSubtitle, { color: textMuted }]}>
-                {isConnected ? 'Real-Time Connected · Encrypted' : 'Connecting to Boolok Live Gateway...'}
-              </Text>
+      {/* ── TOP EXECUTIVE BANNER HEADER (Hidden on mobile when inside an active conversation) ── */}
+      {(!activeConversation || isWide) && (
+        <View style={[styles.headerBanner, { backgroundColor: cardBg, borderBottomColor: borderColor }]}>
+          <View style={styles.headerLeft}>
+            <Pressable onPress={() => router.push('/(app)/feed')} style={styles.backBtn}>
+              <MaterialIcons name="arrow-back" size={20} color={textPrimary} />
+            </Pressable>
+            <View style={styles.titleWrapper}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <BoolokLogo size={18} color={goldPrimary} />
+                <Text style={[styles.headerTitle, { color: textPrimary }]}>Boolok Real Estate Messages</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                <View style={[styles.onlineDot, { backgroundColor: isConnected ? '#22c55e' : '#eab308' }]} />
+                <Text style={[styles.headerSubtitle, { color: textMuted }]}>
+                  {isConnected ? 'Real-Time Connected · Encrypted' : 'Connecting to Boolok Live Gateway...'}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
-      </View>
+      )}
 
       {/* ── MAIN CONTENT (SPLIT PANE OR MOBILE VIEW) ── */}
       <View style={styles.bodyWrapper}>
@@ -571,13 +604,20 @@ export default function MessagesScreen() {
             {activeConversation ? (
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? ((isWide ? 80 : 64) + insets.top) : 0}
                 style={{ flex: 1 }}
               >
                 {/* Chat Top Header */}
                 <View style={[styles.chatHeader, { borderBottomColor: borderColor, backgroundColor: cardBg }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
                     {!isWide && (
-                      <Pressable onPress={() => setActiveConversation(null)} style={{ padding: 4, marginRight: 2 }}>
+                      <Pressable
+                        onPress={() => {
+                          setActiveConversation(null);
+                          router.setParams({ conv: '', userId: '', username: '' });
+                        }}
+                        style={{ padding: 4, marginRight: 2 }}
+                      >
                         <MaterialIcons name="arrow-back" size={22} color={textPrimary} />
                       </Pressable>
                     )}
@@ -651,6 +691,9 @@ export default function MessagesScreen() {
                       data={messages}
                       keyExtractor={(item) => item._id}
                       contentContainerStyle={{ padding: 16, gap: 12 }}
+                      keyboardShouldPersistTaps="handled"
+                      keyboardDismissMode="interactive"
+                      onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
                       onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
                       renderItem={({ item }) => {
                         const currentUserId = String(currentUser?.id || (currentUser as any)?._id || '');
@@ -737,7 +780,14 @@ export default function MessagesScreen() {
                 )}
 
                 {/* Message Input Toolbar */}
-                <View style={[styles.inputToolbar, { backgroundColor: cardBg, borderTopColor: borderColor }]}>
+                <View style={[
+                  styles.inputToolbar,
+                  {
+                    backgroundColor: cardBg,
+                    borderTopColor: borderColor,
+                    paddingBottom: (!isWide && keyboardHeight === 0) ? Math.max(insets.bottom, 10) : 10,
+                  }
+                ]}>
                   <Pressable
                     onPress={handlePickMedia}
                     style={({ pressed, hovered }: any) => [
@@ -756,6 +806,9 @@ export default function MessagesScreen() {
                     value={messageInput}
                     onChangeText={handleInputChange}
                     onSubmitEditing={handleSendMessage}
+                    onFocus={() => {
+                      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
+                    }}
                     multiline={false}
                   />
 

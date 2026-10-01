@@ -40,6 +40,10 @@ const UserAvatar = ({ user, size = 40, style }: { user?: any; size?: number; sty
     rawPhoto = null;
   }
   const photo = resolveImageUrl(rawPhoto);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [photo]);
   const name = user?.fullName || user?.username || (typeof user === 'string' ? user : 'User');
   const initial = (name[0] || 'U').toUpperCase();
 

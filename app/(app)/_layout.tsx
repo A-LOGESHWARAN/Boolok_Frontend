@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, useWindowDimensions, Image, Platform, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, StyleSheet, useWindowDimensions, Image, Platform, ScrollView, TextInput, Alert, ActivityIndicator, Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Stack, router, usePathname, Redirect } from 'expo-router';
+import { Stack, router, usePathname, Redirect, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -34,9 +34,22 @@ function AppLayoutContent() {
   const { user, token, signOut, loading: authLoading } = useAuth();
   const { unreadTotal } = useSocket();
   const pathname = usePathname();
+  const params = useLocalSearchParams();
   const { theme, isDark, toggleTheme } = useTheme();
 
+  // Track keyboard visibility so BottomNav doesn't obstruct inputs or sit above keyboard
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const getAuthToken = async () =>
     token || (Platform.OS === 'web' ? localStorage.getItem('userToken') : await SecureStore.getItemAsync('userToken'));
@@ -799,18 +812,28 @@ function AppLayoutContent() {
           </View>
         </View>
 
-        <View style={[
-          styles.slotContainer,
-          {
-            backgroundColor: isDark ? '#060B13' : '#F8FAFC',
-            flex: 1,
-            paddingBottom: (!isWide && !pathname?.includes('insights')) ? (56 + Math.max(insets.bottom, 10)) : 0,
-          }
-        ]}>
-          <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: isDark ? '#060B13' : '#F8FAFC' } }} />
-        </View>
+        {(() => {
+          const isMessages = pathname?.includes('messages');
+          const isChatActive = isMessages && Boolean(params.conv || params.userId || params.username);
+          const shouldHideBottomNav = !isWide && (isKeyboardVisible || isChatActive || pathname?.includes('insights'));
 
-        {!isWide && <BottomNav />}
+          return (
+            <>
+              <View style={[
+                styles.slotContainer,
+                {
+                  backgroundColor: isDark ? '#060B13' : '#F8FAFC',
+                  flex: 1,
+                  paddingBottom: (!isWide && !shouldHideBottomNav) ? (56 + Math.max(insets.bottom, 10)) : 0,
+                }
+              ]}>
+                <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: isDark ? '#060B13' : '#F8FAFC' } }} />
+              </View>
+
+              {!isWide && !shouldHideBottomNav && <BottomNav />}
+            </>
+          );
+        })()}
       </View>
     </View>
   );
