@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet, useWindowDimensions, Image, Platform, ScrollView, TextInput, Alert, ActivityIndicator, Keyboard } from 'react-native';
+import { View, Text, Pressable, StyleSheet, useWindowDimensions, Image, Platform, ScrollView, TextInput, Alert, ActivityIndicator, Keyboard, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Stack, router, usePathname, Redirect, useLocalSearchParams } from 'expo-router';
+import { Stack, router, usePathname, Redirect, useGlobalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, SlideInLeft } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as SecureStore from 'expo-secure-store';
@@ -34,11 +34,12 @@ function AppLayoutContent() {
   const { user, token, signOut, loading: authLoading } = useAuth();
   const { unreadTotal } = useSocket();
   const pathname = usePathname();
-  const params = useLocalSearchParams();
+  const params = useGlobalSearchParams();
   const { theme, isDark, toggleTheme } = useTheme();
 
   // Track keyboard visibility so BottomNav doesn't obstruct inputs or sit above keyboard
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -227,6 +228,7 @@ function AppLayoutContent() {
   const [headerSearchQuery, setHeaderSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isMobileSearchActive, setIsMobileSearchActive] = useState(false);
 
   // Live Notifications
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -530,6 +532,241 @@ function AppLayoutContent() {
     );
   };
 
+  const ALL_FEATURES_NAV = [
+    { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', route: '/(app)/dashboard', category: 'Main' },
+    { id: 'feed', icon: 'forum', label: 'Social Feed', route: '/(app)/feed', category: 'Main' },
+    { id: 'messages', icon: 'chat', label: 'Direct Messages', route: '/(app)/messages', category: 'Main', badge: unreadTotal },
+    { id: 'search', icon: 'search', label: 'AI Search', route: '/(app)/search', category: 'Main' },
+    { id: 'insights', icon: 'dynamic-feed', label: 'Video Reels & Insights', route: '/(app)/insights', category: 'Main' },
+    { id: 'predictions', icon: 'trending-up', label: 'Price Predictions', route: '/(app)/predictions', category: 'AI Intelligence', tag: 'AI' },
+    { id: 'legal', icon: 'gavel', label: 'Legal AI Advisor', route: '/(app)/legal', category: 'AI Intelligence', tag: 'AI' },
+    { id: 'blueprint', icon: 'home-work', label: 'House Plan & Blueprint', route: '/(app)/blueprint', category: 'AI Intelligence', tag: 'PRO' },
+    { id: 'profile', icon: 'person', label: 'My Portfolio', route: '/(app)/profile', category: 'Account' },
+    { id: 'settings', icon: 'settings', label: 'Settings', route: '/(app)/settings', category: 'Account' },
+  ];
+
+  const MobileSideDrawer = () => {
+    if (!isMobileDrawerOpen || isWide) return null;
+
+    const drawerBg = isDark ? '#080e1a' : '#FFFFFF';
+    const cardBg = isDark ? '#0f1a2e' : '#F1F5F9';
+    const borderColor = isDark ? '#1a273c' : '#E2E8F0';
+
+    const handleNavigate = (route: string) => {
+      setIsMobileDrawerOpen(false);
+      setTimeout(() => {
+        router.push(route as any);
+      }, 50);
+    };
+
+    return (
+      <Modal
+        visible={isMobileDrawerOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsMobileDrawerOpen(false)}
+      >
+        <View style={mobileDrawerStyles.modalOverlay}>
+          {/* Backdrop */}
+          <Pressable
+            style={mobileDrawerStyles.backdrop}
+            onPress={() => setIsMobileDrawerOpen(false)}
+          />
+
+          {/* Drawer Body (Sliding Container) */}
+          <Animated.View
+            entering={SlideInLeft.duration(260)}
+            style={[
+              mobileDrawerStyles.drawerContainer,
+              {
+                backgroundColor: drawerBg,
+                paddingTop: Math.max(insets.top, 16),
+                paddingBottom: Math.max(insets.bottom, 16),
+                borderRightColor: borderColor,
+              }
+            ]}
+          >
+            {/* Header: Brand & Close Button */}
+            <View style={[mobileDrawerStyles.drawerHeader, { borderBottomColor: borderColor }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <BoolokLogo size={28} color={theme.primary} />
+                <View>
+                  <Text style={{ fontSize: 16, fontWeight: '900', color: theme.primary, letterSpacing: 1 }}>BOOLOK</Text>
+                  <Text style={{ fontSize: 8.5, textTransform: 'uppercase', letterSpacing: 1.5, color: theme.onSurfaceVariant, marginTop: -2 }}>
+                    Intelligent Precision
+                  </Text>
+                </View>
+              </View>
+
+              <Pressable
+                onPress={() => setIsMobileDrawerOpen(false)}
+                style={({ pressed }: any) => [
+                  mobileDrawerStyles.closeBtn,
+                  { backgroundColor: cardBg, borderColor },
+                  pressed && { opacity: 0.7 }
+                ]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="close" size={20} color={theme.onSurface} />
+              </Pressable>
+            </View>
+
+            {/* User Mini Card */}
+            <Pressable
+              onPress={() => handleNavigate('/(app)/profile')}
+              style={[mobileDrawerStyles.userCard, { backgroundColor: cardBg, borderColor }]}
+            >
+              {(() => {
+                const navAvatar = resolveImageUrl(user?.profilePicture);
+                if (navAvatar) {
+                  return <Image source={{ uri: navAvatar }} style={mobileDrawerStyles.userAvatar} />;
+                }
+                return (
+                  <View style={[mobileDrawerStyles.userAvatar, { backgroundColor: theme.primary, justifyContent: 'center', alignItems: 'center' }]}>
+                    <Text style={{ color: theme.onPrimary, fontSize: 16, fontWeight: 'bold' }}>
+                      {(user?.fullName || 'Agent').charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                );
+              })()}
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={{ fontSize: 14, fontWeight: '800', color: theme.onSurface }} numberOfLines={1}>
+                  {user?.fullName || 'Real Estate Advisor'}
+                </Text>
+                <Text style={{ fontSize: 11, color: theme.primary, fontWeight: '600', marginTop: 1 }}>
+                  @{user?.username || 'member'} · Elite Advisor
+                </Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={20} color={theme.onSurfaceVariant} />
+            </Pressable>
+
+            {/* Feature Navigation List */}
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 10 }}>
+              {/* Category: Main Features */}
+              <Text style={[mobileDrawerStyles.sectionHeader, { color: theme.onSurfaceVariant }]}>FEATURES</Text>
+              {ALL_FEATURES_NAV.filter(item => item.category === 'Main').map(item => {
+                const isActive = pathname === item.route || pathname === item.route.replace('/(app)', '');
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => handleNavigate(item.route)}
+                    style={({ pressed }: any) => [
+                      mobileDrawerStyles.drawerNavItem,
+                      isActive && { backgroundColor: isDark ? 'rgba(218, 165, 32, 0.12)' : 'rgba(218, 165, 32, 0.1)', borderLeftColor: theme.primary, borderLeftWidth: 4 },
+                      pressed && { opacity: 0.75 },
+                    ]}
+                  >
+                    <View style={{ position: 'relative', width: 28, alignItems: 'center' }}>
+                      <MaterialIcons name={item.icon as any} size={22} color={isActive ? theme.primary : theme.onSurfaceVariant} />
+                      {item.id === 'messages' && unreadTotal > 0 && (
+                        <View style={mobileDrawerStyles.unreadBadge}>
+                          <Text style={{ color: '#000000', fontSize: 8, fontWeight: '900' }}>{unreadTotal > 9 ? '9+' : unreadTotal}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[
+                      mobileDrawerStyles.navItemText,
+                      { color: isActive ? theme.primary : theme.onSurface, fontWeight: isActive ? '800' : '600' }
+                    ]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+
+              {/* Category: AI Intelligence Tools */}
+              <View style={{ height: 1, backgroundColor: borderColor, marginVertical: 10, marginHorizontal: 16 }} />
+              <Text style={[mobileDrawerStyles.sectionHeader, { color: theme.primary }]}>AI INTELLIGENCE & SUITE</Text>
+              {ALL_FEATURES_NAV.filter(item => item.category === 'AI Intelligence').map(item => {
+                const isActive = pathname === item.route || pathname === item.route.replace('/(app)', '');
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => handleNavigate(item.route)}
+                    style={({ pressed }: any) => [
+                      mobileDrawerStyles.drawerNavItem,
+                      isActive && { backgroundColor: isDark ? 'rgba(218, 165, 32, 0.12)' : 'rgba(218, 165, 32, 0.1)', borderLeftColor: theme.primary, borderLeftWidth: 4 },
+                      pressed && { opacity: 0.75 },
+                    ]}
+                  >
+                    <View style={{ width: 28, alignItems: 'center' }}>
+                      <MaterialIcons name={item.icon as any} size={22} color={theme.primary} />
+                    </View>
+                    <Text style={[
+                      mobileDrawerStyles.navItemText,
+                      { color: isActive ? theme.primary : theme.onSurface, fontWeight: isActive ? '800' : '600' }
+                    ]}>
+                      {item.label}
+                    </Text>
+                    {item.tag && (
+                      <View style={[mobileDrawerStyles.tagBadge, { backgroundColor: item.tag === 'PRO' ? '#8b5cf6' : theme.primary }]}>
+                        <Text style={{ color: item.tag === 'PRO' ? '#ffffff' : '#000000', fontSize: 9, fontWeight: '900' }}>{item.tag}</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+
+              {/* Category: Account */}
+              <View style={{ height: 1, backgroundColor: borderColor, marginVertical: 10, marginHorizontal: 16 }} />
+              <Text style={[mobileDrawerStyles.sectionHeader, { color: theme.onSurfaceVariant }]}>PREFERENCES</Text>
+              {ALL_FEATURES_NAV.filter(item => item.category === 'Account').map(item => {
+                const isActive = pathname === item.route || pathname === item.route.replace('/(app)', '');
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => handleNavigate(item.route)}
+                    style={({ pressed }: any) => [
+                      mobileDrawerStyles.drawerNavItem,
+                      isActive && { backgroundColor: isDark ? 'rgba(218, 165, 32, 0.12)' : 'rgba(218, 165, 32, 0.1)', borderLeftColor: theme.primary, borderLeftWidth: 4 },
+                      pressed && { opacity: 0.75 },
+                    ]}
+                  >
+                    <View style={{ width: 28, alignItems: 'center' }}>
+                      <MaterialIcons name={item.icon as any} size={22} color={isActive ? theme.primary : theme.onSurfaceVariant} />
+                    </View>
+                    <Text style={[
+                      mobileDrawerStyles.navItemText,
+                      { color: isActive ? theme.primary : theme.onSurface, fontWeight: isActive ? '800' : '600' }
+                    ]}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Bottom Actions: Theme Toggle & Logout */}
+            <View style={[mobileDrawerStyles.drawerFooter, { borderTopColor: borderColor }]}>
+              <Pressable
+                onPress={toggleTheme}
+                style={[mobileDrawerStyles.footerActionBtn, { backgroundColor: cardBg, borderColor }]}
+              >
+                <MaterialIcons name={isDark ? "dark-mode" : "light-mode"} size={18} color={theme.primary} />
+                <Text style={{ color: theme.onSurface, fontSize: 12, fontWeight: '700', marginLeft: 6 }}>
+                  {isDark ? 'Dark Mode' : 'Light Mode'}
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  setIsMobileDrawerOpen(false);
+                  handleLogout();
+                }}
+                style={[mobileDrawerStyles.footerActionBtn, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEE2E2', borderColor: 'rgba(239, 68, 68, 0.3)' }]}
+              >
+                <MaterialIcons name="logout" size={18} color={theme.error} />
+                <Text style={{ color: theme.error, fontSize: 12, fontWeight: '700', marginLeft: 6 }}>
+                  Logout
+                </Text>
+              </Pressable>
+            </View>
+          </Animated.View>
+        </View>
+      </Modal>
+    );
+  };
+
   const insets = useSafeAreaInsets();
 
   // ── Auth Guard (Placed after all hooks to comply with React Rules of Hooks) ──
@@ -561,7 +798,7 @@ function AppLayoutContent() {
           zIndex: 100,
           ...(!isDark ? shadows.xs : {}),
         }]}>
-          {/* Header Left: Brand logo & Greeting */}
+          {/* Header Left: Brand logo & Greeting OR Mobile Search Bar */}
           {isWide ? (
             <View style={{ flexShrink: 0, minWidth: 160, marginRight: spacing.md }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: theme.onSurface }} numberOfLines={1}>
@@ -569,8 +806,18 @@ function AppLayoutContent() {
               </Text>
               <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, fontWeight: '500' }}>Real Estate Intelligence</Text>
             </View>
-          ) : (
+          ) : !isMobileSearchActive ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: 8 }}>
+              <Pressable
+                onPress={() => setIsMobileDrawerOpen(true)}
+                style={({ pressed }: any) => [
+                  { padding: 6, marginRight: 4, borderRadius: 8 },
+                  pressed && { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }
+                ]}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="menu" size={24} color={theme.onSurface} />
+              </Pressable>
               <Pressable onPress={() => router.push('/(app)/dashboard')} style={{ flexDirection: 'row', alignItems: 'center', marginRight: 8 }}>
                 <BoolokLogo size={24} color={theme.primary} />
                 <Text style={{ fontSize: 15, fontWeight: '900', color: theme.primary, letterSpacing: 1, marginLeft: 5 }}>
@@ -585,6 +832,126 @@ function AppLayoutContent() {
                   Elite Advisor
                 </Text>
               </View>
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 6, position: 'relative', zIndex: 999 }}>
+              <Pressable
+                onPress={() => {
+                  setIsMobileSearchActive(false);
+                  setHeaderSearchQuery('');
+                  setSearchResults([]);
+                }}
+                style={{ padding: 6, marginRight: 4, borderRadius: 8 }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <MaterialIcons name="arrow-back" size={24} color={theme.onSurface} />
+              </Pressable>
+              <View style={[styles.searchBar, { flex: 1, height: 42, backgroundColor: theme.surfaceContainerLowest, borderColor: '#daa520' }]}>
+                <MaterialIcons name="search" size={20} color="#daa520" />
+                <TextInput
+                  style={{ color: theme.onSurface, marginLeft: 8, fontSize: 14, flex: 1, height: '100%', outlineStyle: 'none' } as any}
+                  placeholder="Search agents, brokers, or profiles..."
+                  placeholderTextColor={theme.outline}
+                  value={headerSearchQuery}
+                  onChangeText={setHeaderSearchQuery}
+                  autoFocus={true}
+                  onSubmitEditing={() => {
+                    if (searchResults.length > 0) {
+                      setIsMobileSearchActive(false);
+                      handleSelectUser(searchResults[0]);
+                    } else if (headerSearchQuery.trim()) {
+                      setIsMobileSearchActive(false);
+                      const q = headerSearchQuery.trim();
+                      setHeaderSearchQuery('');
+                      router.push({ pathname: '/(app)/search', params: { q, filter: 'Profiles' } } as any);
+                    }
+                  }}
+                />
+                {isSearching && <ActivityIndicator size="small" color="#daa520" style={{ marginRight: 4 }} />}
+                {headerSearchQuery.length > 0 && (
+                  <Pressable onPress={() => setHeaderSearchQuery('')} style={{ padding: 4 }}>
+                    <MaterialIcons name="close" size={18} color={theme.onSurfaceVariant} />
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Mobile Real-time Autocomplete Dropdown */}
+              {headerSearchQuery.trim().length > 0 && (
+                <View style={[
+                  styles.autocompleteDropdown,
+                  {
+                    position: 'absolute',
+                    top: 48,
+                    left: 0,
+                    right: 0,
+                    backgroundColor: isDark ? '#0c1626' : '#ffffff',
+                    borderColor: theme.outlineVariant,
+                    maxHeight: 380,
+                    zIndex: 9999,
+                    elevation: 10,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: 0.35,
+                    shadowRadius: 16,
+                  }
+                ]}>
+                  {searchResults.length > 0 ? (
+                    <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 280 }}>
+                      {searchResults.map((u: any, idx: number) => {
+                        const initial = (u.fullName || u.username || 'U')[0]?.toUpperCase();
+                        return (
+                          <Pressable
+                            key={u.id || u._id || idx}
+                            style={({ pressed, hovered }: any) => [
+                              styles.dropdownItem,
+                              { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: idx < searchResults.length - 1 ? 1 : 0, borderBottomColor: isDark ? '#1a273c' : '#f0f0f0' },
+                              (pressed || hovered) && { backgroundColor: isDark ? '#162338' : '#f8f9fa' }
+                            ]}
+                            onPress={() => {
+                              setIsMobileSearchActive(false);
+                              handleSelectUser(u);
+                            }}
+                          >
+                            {resolveImageUrl(u.profilePicture) ? (
+                              <Image source={{ uri: resolveImageUrl(u.profilePicture)! }} style={{ width: 34, height: 34, borderRadius: 17, marginRight: 10 }} />
+                            ) : (
+                              <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: isDark ? '#1e293b' : '#e2e8f0', justifyContent: 'center', alignItems: 'center', marginRight: 10, borderWidth: 1, borderColor: '#daa520' }}>
+                                <Text style={{ color: '#daa520', fontWeight: '700', fontSize: 14 }}>{initial}</Text>
+                              </View>
+                            )}
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={{ color: theme.onSurface, fontSize: 14, fontWeight: '700' }}>{u.fullName}</Text>
+                                <MaterialIcons name="verified" size={14} color="#daa520" style={{ marginLeft: 4 }} />
+                              </View>
+                              <Text style={{ color: theme.onSurfaceVariant, fontSize: 11 }}>@{u.username} · {u.followerCount || 0} followers</Text>
+                            </View>
+                            <MaterialIcons name="chevron-right" size={18} color={theme.outline} />
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  ) : !isSearching ? (
+                    <View style={[styles.dropdownItem, { padding: 14 }]}>
+                      <Text style={{ color: theme.onSurfaceVariant, fontSize: 13 }}>No profiles found matching "{headerSearchQuery}"</Text>
+                    </View>
+                  ) : null}
+
+                  <Pressable
+                    onPress={() => {
+                      setIsMobileSearchActive(false);
+                      const q = headerSearchQuery.trim();
+                      setHeaderSearchQuery('');
+                      router.push({ pathname: '/(app)/search', params: { q, filter: 'Profiles' } } as any);
+                    }}
+                    style={{ padding: 12, borderTopWidth: 1, borderTopColor: isDark ? '#1a273c' : '#f0f0f0', alignItems: 'center', backgroundColor: isDark ? '#0f1a2e' : '#f8fafc', borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg }}
+                  >
+                    <Text style={{ color: '#daa520', fontSize: 12, fontWeight: '700' }}>
+                      Search all in AI Search Hub →
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
             </View>
           )}
 
@@ -647,13 +1014,14 @@ function AppLayoutContent() {
             </View>
           )}
 
-          <View style={styles.headerActions}>
-            {/* Quick search on mobile */}
-            {!isWide && (
-              <Pressable onPress={() => router.push('/(app)/search')} style={styles.iconBtn}>
-                <MaterialIcons name="search" size={22} color={theme.onSurfaceVariant} />
-              </Pressable>
-            )}
+          {(!isMobileSearchActive || isWide) && (
+            <View style={styles.headerActions}>
+              {/* Quick search on mobile */}
+              {!isWide && (
+                <Pressable onPress={() => setIsMobileSearchActive(true)} style={styles.iconBtn}>
+                  <MaterialIcons name="search" size={22} color={theme.onSurfaceVariant} />
+                </Pressable>
+              )}
 
             {/* Direct Messages Icon Button */}
             <View style={{ position: 'relative' }}>
@@ -810,6 +1178,7 @@ function AppLayoutContent() {
               )}
             </Pressable>
           </View>
+          )}
         </View>
 
         {(() => {
@@ -831,6 +1200,7 @@ function AppLayoutContent() {
               </View>
 
               {!isWide && !shouldHideBottomNav && <BottomNav />}
+              {!isWide && <MobileSideDrawer />}
             </>
           );
         })()}
@@ -1026,3 +1396,110 @@ const styles = StyleSheet.create({
     ...Platform.select({ web: { transition: 'background-color 0.3s ease' } as any }),
   }
 });
+
+const mobileDrawerStyles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    zIndex: 1,
+  },
+  drawerContainer: {
+    width: '82%',
+    maxWidth: 320,
+    height: '100%',
+    zIndex: 2,
+    borderRightWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  userCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 14,
+    marginTop: 12,
+    marginBottom: 6,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  userAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+  },
+  sectionHeader: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    paddingHorizontal: 18,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  drawerNavItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 18,
+  },
+  navItemText: {
+    fontSize: 13.5,
+    marginLeft: 12,
+    flex: 1,
+  },
+  unreadBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -4,
+    backgroundColor: '#daa520',
+    borderRadius: 6,
+    minWidth: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 2,
+  },
+  tagBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 8,
+  },
+  drawerFooter: {
+    borderTopWidth: 1,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    gap: 8,
+  },
+  footerActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+});
+

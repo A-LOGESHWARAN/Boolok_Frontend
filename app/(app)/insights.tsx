@@ -16,6 +16,7 @@ import {
   Image,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { typography } from '../../constants/theme';
@@ -1800,9 +1801,11 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function InsightsScreen() {
   const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isMobile = width < 768; // Standard responsive breakpoint
-  const [listHeight, setListHeight] = useState(height);
+  const initialMobileHeight = Math.max(300, height - ((isMobile ? 64 : 80) + insets.top));
+  const [listHeight, setListHeight] = useState(initialMobileHeight);
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
   const [videos, setVideos] = useState<any[]>(DUMMY_VIDEOS);
   const [showUpload, setShowUpload] = useState(false);
@@ -1810,18 +1813,20 @@ export default function InsightsScreen() {
 
   // Layout sizing
   const cardWidth = isMobile ? width : 420;
-  const mobileDefaultHeight = Math.max(300, height - 64);
   const cardHeight = isMobile
-    ? (listHeight > 200 ? listHeight : mobileDefaultHeight)
+    ? (listHeight > 200 ? listHeight : initialMobileHeight)
     : Math.min(height - 120, 750);
 
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems && viewableItems.length > 0) {
+    if (viewableItems && viewableItems.length > 0 && typeof viewableItems[0].index === 'number') {
       setActiveVideoIndex(viewableItems[0].index);
     }
   }).current;
 
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 60,
+    waitForInteraction: false,
+  }).current;
 
   // Load backend reels on mount
   useEffect(() => {
@@ -1889,13 +1894,9 @@ export default function InsightsScreen() {
               }
             });
             if (Platform.OS === 'web') {
-              const raw = localStorage.getItem('boolok_following_users_set');
-              const merged = { ...(raw ? JSON.parse(raw) : {}), ...dbFollowMap };
-              localStorage.setItem('boolok_following_users_set', JSON.stringify(merged));
+              localStorage.setItem('boolok_following_users_set', JSON.stringify(dbFollowMap));
             } else {
-              const raw = await SecureStore.getItemAsync('boolok_following_users_set');
-              const merged = { ...(raw ? JSON.parse(raw) : {}), ...dbFollowMap };
-              await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(merged));
+              await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(dbFollowMap));
             }
           }
         } catch (_) {}
@@ -1965,9 +1966,31 @@ export default function InsightsScreen() {
     }
   }, [activeVideoIndex]);
 
-  // Desktop keyboard shortcuts on Web
+  // Desktop keyboard & mouse wheel navigation on Web
   useEffect(() => {
-    if (Platform.OS !== 'web' || isMobile) return;
+    if (Platform.OS !== 'web') return;
+
+    let isWheelThrottled = false;
+    const handleWheel = (e: WheelEvent) => {
+      // Don't intercept if inside comments, search, or inputs
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('input, textarea, [data-scrollable="true"]')) return;
+      if (Math.abs(e.deltaY) < 30) return; // Ignore slight trackpad jitter
+
+      e.preventDefault();
+      if (isWheelThrottled) return;
+      isWheelThrottled = true;
+
+      if (e.deltaY > 0) {
+        scrollToNext();
+      } else {
+        scrollToPrev();
+      }
+
+      setTimeout(() => {
+        isWheelThrottled = false;
+      }, 400);
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore when user is typing in an input
@@ -1989,8 +2012,12 @@ export default function InsightsScreen() {
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [scrollToNext, scrollToPrev, isMobile]);
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('wheel', handleWheel);
+    };
+  }, [scrollToNext, scrollToPrev]);
 
   return (
     <Animated.View
@@ -2028,13 +2055,20 @@ export default function InsightsScreen() {
               />
             )}
             keyExtractor={(item) => item._id}
-            pagingEnabled={true}
+            pagingEnabled={Platform.OS === 'ios'}
             snapToInterval={cardHeight}
             snapToAlignment="start"
             decelerationRate="fast"
+            disableIntervalMomentum={true}
+            bounces={false}
+            overScrollMode="never"
             showsVerticalScrollIndicator={false}
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={viewabilityConfig}
+            windowSize={3}
+            maxToRenderPerBatch={2}
+            initialNumToRender={2}
+            removeClippedSubviews={Platform.OS === 'android'}
             getItemLayout={cardHeight > 100 ? (_, index) => ({
               length: cardHeight,
               offset: cardHeight * index,
@@ -2099,6 +2133,12 @@ export default function InsightsScreen() {
                 snapToInterval={cardHeight + 36}
                 snapToAlignment="start"
                 decelerationRate="fast"
+                disableIntervalMomentum={true}
+                bounces={false}
+                overScrollMode="never"
+                windowSize={3}
+                maxToRenderPerBatch={2}
+                initialNumToRender={2}
                 getItemLayout={(_, index) => ({
                   length: cardHeight + 36,
                   offset: (cardHeight + 36) * index,

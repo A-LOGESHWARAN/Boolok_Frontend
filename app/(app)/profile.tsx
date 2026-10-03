@@ -154,9 +154,9 @@ const COMMUNITY_MEMBERS = [
     location: 'Western Australia · Vineyard Estates',
     bio: 'Focused on precision cap-rate calculations, commercial yield optimization, and real estate investment portfolios.',
     closedDeals: '3',
-    followerCount: 1,
-    followingCount: 1,
-    mutuals: 'Followed by Sai',
+    followerCount: 0,
+    followingCount: 0,
+    mutuals: '',
     profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c',
     coverImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200',
     reels: [

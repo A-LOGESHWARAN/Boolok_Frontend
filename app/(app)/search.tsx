@@ -21,10 +21,11 @@ import { spacing, typography, radius } from '../../constants/theme';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import axios from 'axios';
 import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
+import { router, useLocalSearchParams } from 'expo-router';
 
 export interface SearchItem {
   id: string;
-  type: 'property' | 'legal' | 'news';
+  type: 'property' | 'legal' | 'news' | 'profile';
   title: string;
   subtitle: string;
   category?: string;
@@ -61,7 +62,143 @@ export interface SearchItem {
   marketMetrics?: { label: string; value: string }[];
   sourceName?: string;
   sourceUrl?: string;
+  profileUser?: any;
 }
+
+const COMMUNITY_PROFILES: any[] = [
+  {
+    id: 'shreekutti',
+    _id: 'shreekutti',
+    fullName: 'Shreekutti',
+    username: 'shreekutti',
+    headline: 'Commercial Property & Tech Park Portfolio Lead @ Boolok',
+    location: 'Bangalore, Karnataka · Tech Parks',
+    profilePicture: null,
+    followerCount: 4,
+    closedDeals: '6',
+  },
+  {
+    id: '6a8af34812ef34aed25ae8d2',
+    _id: '6a8af34812ef34aed25ae8d2',
+    fullName: 'Logeshwaran A',
+    username: 'logeshwarana',
+    headline: 'Architectural Consultant & Real Estate Lead',
+    location: 'Western Australia · Vineyard Estates',
+    profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c',
+    followerCount: 2,
+    closedDeals: '3',
+  },
+  {
+    id: 'ajmal',
+    _id: 'ajmal',
+    fullName: 'Mohammed Ajmal',
+    username: 'ajmal',
+    headline: 'Luxury Living & High-End Residential Broker',
+    location: 'Dubai & Kochi · Luxury Villas',
+    profilePicture: null,
+    followerCount: 4,
+    closedDeals: '8',
+  },
+  {
+    id: 'bavadharini_rs',
+    _id: 'bavadharini_rs',
+    fullName: 'Bavadharini RS',
+    username: 'bavadharini_rs',
+    headline: 'Interior Designer & Modern Living Specialist',
+    location: 'Chennai, Tamil Nadu · Modern Living',
+    profilePicture: null,
+    followerCount: 4,
+    closedDeals: '2',
+  },
+  {
+    id: 'the_akshtr_estate',
+    _id: 'the_akshtr_estate',
+    fullName: 'Akshat Commercials',
+    username: 'the_akshtr_estate',
+    headline: 'Commercial Property & Tech Park Portfolio Lead',
+    location: 'Chennai, Tamil Nadu · Prime Assets',
+    profilePicture: null,
+    followerCount: 4,
+    closedDeals: '5',
+  },
+  {
+    id: 'prasanth_properties',
+    _id: 'prasanth_properties',
+    fullName: 'Prasanth Properties',
+    username: 'prasanth_properties',
+    headline: 'Luxury Waterfront Specialist · Miami & Coastal Estates',
+    location: 'Miami, Florida · Coastal Estates',
+    profilePicture: null,
+    followerCount: 4,
+    closedDeals: '4',
+  },
+  {
+    id: 'aswin',
+    _id: 'aswin',
+    fullName: 'Aswin Real Estate',
+    username: 'aswin',
+    headline: 'Principal Real Estate Broker & Multi-Family Asset Advisor',
+    location: 'Chennai, Tamil Nadu · Luxury & Commercial Assets',
+    profilePicture: null,
+    followerCount: 3,
+    closedDeals: '7',
+  },
+  {
+    id: 'vignesh',
+    _id: 'vignesh',
+    fullName: 'Vigneshwaran',
+    username: 'vignesh',
+    headline: 'Prime Architectural Estates & Beverly Hills Luxury Specialist',
+    location: 'Beverly Hills, California · Ultra Luxury',
+    profilePicture: null,
+    followerCount: 3,
+    closedDeals: '5',
+  },
+  {
+    id: 'yashwanth',
+    _id: 'yashwanth',
+    fullName: 'Yashwanth',
+    username: 'yashwanth',
+    headline: 'Prime Commercial Hubs & Institutional Realty Lead',
+    location: 'Chennai & Bangalore · Commercial Hubs',
+    profilePicture: null,
+    followerCount: 4,
+    closedDeals: '4',
+  },
+  {
+    id: 'sophia_luxury',
+    _id: 'sophia_luxury',
+    fullName: 'Sophia Sterling',
+    username: 'sophia_luxury',
+    headline: 'European Family Office Principal & Luxury Syndication Client',
+    location: 'Geneva, Switzerland & London · Private Capital',
+    profilePicture: null,
+    followerCount: 5,
+    closedDeals: '9',
+  },
+  {
+    id: 'david_sterling',
+    _id: 'david_sterling',
+    fullName: 'David Sterling',
+    username: 'david_sterling',
+    headline: 'Managing Director · Sterling Global Capital & Asset Co-Owner',
+    location: 'London, UK & Beverly Hills · Private Equity',
+    profilePicture: null,
+    followerCount: 6,
+    closedDeals: '3',
+  },
+  {
+    id: 'marcus_vance',
+    _id: 'marcus_vance',
+    fullName: 'Marcus Vance',
+    username: 'marcus_vance',
+    headline: 'Institutional Real Estate Syndicate Lead & Co-Ownership Client',
+    location: 'New York, NY · Real Estate Private Equity',
+    profilePicture: null,
+    followerCount: 4,
+    closedDeals: '2',
+  },
+];
 
 const SEARCH_DATABASE: SearchItem[] = [
   // ─── 1. PROPERTIES ────────────────────────────────────────────────────────
@@ -459,12 +596,41 @@ const SEARCH_DATABASE: SearchItem[] = [
 
 export default function AISearchHubScreen() {
   const { user } = useAuth();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
+  const routeParams = useLocalSearchParams<{ q?: string; filter?: string }>();
   const [query, setQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
   const [selectedItem, setSelectedItem] = useState<SearchItem | null>(null);
   const [activeGalleryIndex, setActiveGalleryIndex] = useState(0);
   const [isSaved, setIsSaved] = useState<Record<string, boolean>>({});
+  const [apiUsers, setApiUsers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (routeParams.q) {
+      setQuery(routeParams.q);
+    }
+    if (routeParams.filter) {
+      setActiveFilter(routeParams.filter);
+    }
+  }, [routeParams.q, routeParams.filter]);
+
+  // Live profile search from backend
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setApiUsers([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/users/search?q=${encodeURIComponent(q)}`);
+        if (res.data && Array.isArray(res.data.results)) {
+          setApiUsers(res.data.results);
+        }
+      } catch (e) {}
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
@@ -558,20 +724,62 @@ export default function AISearchHubScreen() {
     );
   };
 
-  const filters = ['All', 'Properties', 'Legal', 'News'];
+  const filters = ['All', 'Profiles', 'Properties', 'Legal', 'News'];
+
+  const profileItems = useMemo(() => {
+    const allUsers: any[] = [...COMMUNITY_PROFILES];
+    if (user) {
+      allUsers.unshift({
+        id: user.id || user._id || 'self',
+        _id: user.id || user._id || 'self',
+        fullName: user.fullName || 'Sai Vimenthan',
+        username: user.username || 'saivimenthanvl',
+        headline: user.headline || 'Elite Real Estate Broker & Commercial Portfolio Lead',
+        location: user.location || 'Chennai, Tamil Nadu · Prime Assets',
+        profilePicture: user.profilePicture || null,
+        followerCount: user.followerCount || 0,
+        closedDeals: '12',
+      });
+    }
+
+    if (apiUsers.length > 0) {
+      const seen = new Set(allUsers.map((u) => (u.username || u.id || u._id || '').toLowerCase()));
+      apiUsers.forEach((u) => {
+        const key = (u.username || u.id || u._id || '').toLowerCase();
+        if (!seen.has(key)) {
+          allUsers.push(u);
+        }
+      });
+    }
+
+    return allUsers.map((u): SearchItem => ({
+      id: `profile-${u.id || u._id || u.username}`,
+      type: 'profile',
+      title: u.fullName || u.username,
+      subtitle: `@${u.username} • ${u.headline || 'Real Estate Advisor'}`,
+      category: 'Verified Member Profile',
+      location: u.location || 'Global Real Estate Network',
+      description: u.bio || u.headline || 'Verified member on Boolok AI Real Estate network.',
+      image: u.profilePicture || null,
+      profileUser: u,
+    }));
+  }, [user, apiUsers]);
 
   const filteredResults = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const allItems = [...liveMemberPosts, ...SEARCH_DATABASE];
+    const allItems = [...profileItems, ...liveMemberPosts, ...SEARCH_DATABASE];
     return allItems.filter((item) => {
       const matchesFilter =
         activeFilter === 'All' ||
+        (activeFilter === 'Profiles' && item.type === 'profile') ||
         (activeFilter === 'Properties' && item.type === 'property') ||
         (activeFilter === 'Legal' && item.type === 'legal') ||
         (activeFilter === 'News' && item.type === 'news');
 
       if (!matchesFilter) return false;
-      if (!q) return true;
+      if (!q) {
+        return activeFilter === 'Profiles' || item.type !== 'profile';
+      }
 
       const titleMatch = (item.title || '').toLowerCase().includes(q);
       const subMatch = (item.subtitle || '').toLowerCase().includes(q);
@@ -579,10 +787,16 @@ export default function AISearchHubScreen() {
       const descMatch = (item.description || '').toLowerCase().includes(q);
       const sellerMatch = item.seller ? item.seller.name.toLowerCase().includes(q) : false;
       const jurisMatch = item.jurisdiction ? item.jurisdiction.toLowerCase().includes(q) : false;
+      const userMatch = item.profileUser
+        ? (item.profileUser.username || '').toLowerCase().includes(q) ||
+          (item.profileUser.fullName || '').toLowerCase().includes(q) ||
+          (item.profileUser.headline || '').toLowerCase().includes(q) ||
+          (item.profileUser.location || '').toLowerCase().includes(q)
+        : false;
 
-      return titleMatch || subMatch || catMatch || descMatch || sellerMatch || jurisMatch;
+      return titleMatch || subMatch || catMatch || descMatch || sellerMatch || jurisMatch || userMatch;
     });
-  }, [query, activeFilter]);
+  }, [query, activeFilter, profileItems, liveMemberPosts]);
 
   const handleOpenItem = (item: SearchItem) => {
     setSelectedItem(item);
@@ -607,6 +821,98 @@ export default function AISearchHubScreen() {
   };
 
   const renderItem = ({ item }: { item: SearchItem }) => {
+    if (item.type === 'profile') {
+      const u = item.profileUser || {};
+      const avatarUrl = resolveImageUrl(u.profilePicture || item.image);
+      const initial = (item.title || 'U')[0]?.toUpperCase();
+
+      return (
+        <Pressable
+          onPress={() => router.push({ pathname: '/(app)/profile', params: { id: u.id || u._id || u.username } } as any)}
+          style={({ pressed, hovered }: any) => [
+            styles.resultCard,
+            styles.profileCard,
+            {
+              backgroundColor: theme.surface,
+              borderColor: hovered || pressed ? '#daa520' : theme.outlineVariant,
+              transform: [{ scale: pressed ? 0.99 : hovered ? 1.01 : 1 }],
+            },
+          ]}
+        >
+          <View style={styles.profileCardHeader}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.profileAvatar} />
+            ) : (
+              <View style={[styles.profileAvatarFallback, { backgroundColor: isDark ? '#162338' : '#FEF3C7', borderColor: '#daa520' }]}>
+                <Text style={{ color: '#daa520', fontWeight: '800', fontSize: 18 }}>{initial}</Text>
+              </View>
+            )}
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                <Text style={[styles.profileName, { color: theme.onSurface }]}>{item.title}</Text>
+                <MaterialIcons name="verified" size={16} color="#daa520" style={{ marginLeft: 5 }} />
+                <View style={styles.profileBadge}>
+                  <Text style={styles.profileBadgeText}>PROFILE</Text>
+                </View>
+              </View>
+              <Text style={{ fontSize: 12, color: theme.primary, fontWeight: '700', marginTop: 2 }}>
+                @{u.username}
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.onSurfaceVariant, marginTop: 4, lineHeight: 16 }} numberOfLines={2}>
+                {u.headline || item.description}
+              </Text>
+            </View>
+          </View>
+
+          {/* Location and Stats */}
+          <View style={[styles.profileDetailsRow, { borderTopColor: isDark ? '#1a273c' : '#f0f0f0' }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+              <MaterialIcons name="location-on" size={14} color={theme.primary} style={{ marginRight: 4 }} />
+              <Text style={{ fontSize: 11, color: theme.onSurfaceVariant }} numberOfLines={1}>
+                {u.location || 'Global Real Estate Network'}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={{ fontSize: 11, color: theme.onSurfaceVariant }}>
+                <Text style={{ fontWeight: '800', color: theme.onSurface }}>{u.followerCount || 0}</Text> followers
+              </Text>
+              {u.closedDeals && (
+                <Text style={{ fontSize: 11, color: theme.onSurfaceVariant }}>
+                  <Text style={{ fontWeight: '800', color: '#daa520' }}>{u.closedDeals}</Text> deals
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.profileActionRow}>
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: '/(app)/profile', params: { id: u.id || u._id || u.username } } as any)}
+              style={[styles.profileBtnPrimary, { backgroundColor: '#daa520' }]}
+            >
+              <MaterialIcons name="person" size={15} color="#000000" style={{ marginRight: 4 }} />
+              <Text style={{ color: '#000000', fontSize: 12, fontWeight: '800' }}>View Profile</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push({
+                pathname: '/(app)/messages',
+                params: {
+                  userId: u.id || u._id || u.username,
+                  username: u.username,
+                  fullName: u.fullName || u.username,
+                }
+              } as any)}
+              style={[styles.profileBtnSecondary, { borderColor: isDark ? '#334155' : '#cbd5e1', backgroundColor: isDark ? '#0f1a2e' : '#f8fafc' }]}
+            >
+              <MaterialIcons name="chat" size={15} color={theme.onSurface} style={{ marginRight: 4 }} />
+              <Text style={{ color: theme.onSurface, fontSize: 12, fontWeight: '700' }}>Message</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      );
+    }
+
     const isProp = item.type === 'property';
     const isLegal = item.type === 'legal';
     const isNews = item.type === 'news';
@@ -717,7 +1023,7 @@ export default function AISearchHubScreen() {
                 styles.searchInput,
                 { backgroundColor: theme.surface, borderColor: theme.outlineVariant, color: theme.onSurface },
               ]}
-              placeholder="Search properties, laws, or market data..."
+              placeholder="Search profiles, agents, properties, or laws..."
               placeholderTextColor={theme.outline}
               value={query}
               onChangeText={setQuery}
@@ -1778,5 +2084,76 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     flex: 1,
+  },
+  profileCard: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  profileCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profileAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#daa520',
+  },
+  profileAvatarFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+  },
+  profileName: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  profileBadge: {
+    backgroundColor: 'rgba(218, 165, 32, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+  },
+  profileBadgeText: {
+    color: '#daa520',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  profileDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    marginTop: 12,
+    borderTopWidth: 1,
+  },
+  profileActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  profileBtnPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 8,
+  },
+  profileBtnSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 8,
+    borderWidth: 1,
   },
 });

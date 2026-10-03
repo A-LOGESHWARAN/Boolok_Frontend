@@ -752,20 +752,15 @@ export default function ProfessionalSocialFeedScreen() {
         });
       }
 
-      if (Object.keys(dbFollowMap).length > 0) {
-        setFollowingMap((prev) => ({ ...prev, ...dbFollowMap }));
-        try {
-          if (Platform.OS === 'web') {
-            const raw = localStorage.getItem('boolok_following_users_set');
-            const merged = { ...(raw ? JSON.parse(raw) : {}), ...dbFollowMap };
-            localStorage.setItem('boolok_following_users_set', JSON.stringify(merged));
-          } else {
-            const raw = await SecureStore.getItemAsync('boolok_following_users_set');
-            const merged = { ...(raw ? JSON.parse(raw) : {}), ...dbFollowMap };
-            await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(merged));
-          }
-        } catch (_) {}
-      }
+      // Sync following map strictly with the authenticated user's actual database following
+      setFollowingMap(dbFollowMap);
+      try {
+        if (Platform.OS === 'web') {
+          localStorage.setItem('boolok_following_users_set', JSON.stringify(dbFollowMap));
+        } else {
+          await SecureStore.setItemAsync('boolok_following_users_set', JSON.stringify(dbFollowMap));
+        }
+      } catch (_) {}
     } catch (error) {
       console.error('Feed fetch error:', error);
     } finally {

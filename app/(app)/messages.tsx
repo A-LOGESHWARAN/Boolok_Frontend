@@ -14,7 +14,14 @@ import {
   ScrollView,
   Alert,
   Keyboard,
+  Dimensions,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -39,7 +46,9 @@ const COMMUNITY_MEMBERS_DIRECTORY = [
 ];
 
 export default function MessagesScreen() {
-  const { width } = useWindowDimensions();
+  const { width, height: windowHeight } = useWindowDimensions();
+  const screenHeight = Dimensions.get('screen').height;
+  const isWindowAlreadyResized = screenHeight - windowHeight > 150;
   const isWide = width >= 768;
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
@@ -69,29 +78,73 @@ export default function MessagesScreen() {
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
+  // Dynamic keyboard avoidance padding for Android and Mobile Web
+  const keyboardAvoidancePadding = Platform.OS === 'android' && !isWindowAlreadyResized
+    ? keyboardHeight
+    : (Platform.OS === 'web' && keyboardHeight > 0 ? keyboardHeight : 0);
+
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<any>(null);
   const activeConversationRef = useRef<any>(null);
 
   // Keyboard show/hide listener to ensure message place stays visible and scrolls smoothly
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const handleKeyboardShow = (e: any) => {
+      const h = e?.endCoordinates?.height || 0;
+      if (h > 0) {
+        if (Platform.OS === 'android') {
+          try {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          } catch (_) {}
+        }
+        setKeyboardHeight(h);
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 80);
+      }
+    };
 
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates?.height || 0);
+    const handleKeyboardHide = () => {
+      if (Platform.OS === 'android') {
+        try {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        } catch (_) {}
+      }
+      setKeyboardHeight(0);
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    });
+      }, 80);
+    };
 
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
+    const subs = [
+      Keyboard.addListener('keyboardWillShow', handleKeyboardShow),
+      Keyboard.addListener('keyboardDidShow', handleKeyboardShow),
+      Keyboard.addListener('keyboardWillHide', handleKeyboardHide),
+      Keyboard.addListener('keyboardDidHide', handleKeyboardHide),
+    ];
+
+    let viewportResizeHandler: (() => void) | null = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.visualViewport) {
+      viewportResizeHandler = () => {
+        if (!window.visualViewport) return;
+        const currentHeight = window.visualViewport.height;
+        const totalHeight = window.innerHeight;
+        const diff = totalHeight - currentHeight;
+        if (diff > 120) {
+          setKeyboardHeight(diff);
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+        } else {
+          setKeyboardHeight(0);
+        }
+      };
+      window.visualViewport.addEventListener('resize', viewportResizeHandler);
+    }
 
     return () => {
-      showSub.remove();
-      hideSub.remove();
+      subs.forEach((s) => s.remove());
+      if (viewportResizeHandler && typeof window !== 'undefined' && window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', viewportResizeHandler);
+      }
     };
   }, []);
 
@@ -246,6 +299,7 @@ export default function MessagesScreen() {
           return [...prev, newMsg];
         });
         markConversationRead(activeConvId);
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
       }
       fetchConversations();
     };
@@ -298,16 +352,36 @@ export default function MessagesScreen() {
     }, 1500);
   };
 
-  // 7. Send message handler
+  // 7. Send message handler with optimistic UI updates
   const handleSendMessage = async () => {
     const textToSend = messageInput.trim();
     const mediaToSend = attachedImage;
     if ((!textToSend && !mediaToSend) || isSending || !activeConversation) return;
 
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg = {
+      _id: tempId,
+      conversationId: activeConversation._id,
+      sender: {
+        _id: currentUser?.id || (currentUser as any)?._id,
+        fullName: currentUser?.fullName || 'Me',
+        profilePicture: currentUser?.profilePicture,
+      },
+      recipient: activeConversation.otherUser,
+      text: textToSend,
+      mediaUrl: mediaToSend,
+      createdAt: new Date().toISOString(),
+      sending: true,
+    };
+
     setIsSending(true);
     setMessageInput('');
     setAttachedImage(null);
     sendStopTyping(activeConversation._id);
+
+    // Optimistically show message immediately so user sees it right away!
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
 
     try {
       const authToken = await getToken();
@@ -325,10 +399,12 @@ export default function MessagesScreen() {
         socket.emit('send_message', payload, (response: any) => {
           if (response?.message) {
             setMessages((prev) => {
-              if (prev.some((m) => m._id === response.message._id)) return prev;
-              return [...prev, response.message];
+              const withoutTemp = prev.filter((m) => m._id !== tempId);
+              if (withoutTemp.some((m) => m._id === response.message._id)) return withoutTemp;
+              return [...withoutTemp, response.message];
             });
             fetchConversations();
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
           }
         });
       } else {
@@ -336,13 +412,19 @@ export default function MessagesScreen() {
           headers: { Authorization: `Bearer ${authToken}` },
         });
         if (res.data?.message) {
-          setMessages((prev) => [...prev, res.data.message]);
+          setMessages((prev) => {
+            const withoutTemp = prev.filter((m) => m._id !== tempId);
+            return [...withoutTemp, res.data.message];
+          });
           fetchConversations();
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
         }
       }
     } catch (error) {
       console.error('Failed to send message:', error);
       Alert.alert('Error', 'Failed to deliver message.');
+      // Remove optimistic message if failed
+      setMessages((prev) => prev.filter((m) => m._id !== tempId));
     } finally {
       setIsSending(false);
     }
@@ -600,7 +682,13 @@ export default function MessagesScreen() {
 
         {/* RIGHT PANE: ACTIVE CHAT VIEW (Visible on Wide, or on Mobile when conversation is selected) */}
         {(isWide || activeConversation) && (
-          <View style={[styles.rightPane, { backgroundColor: cardBg, borderColor }]}>
+          <View
+            style={[
+              styles.rightPane,
+              { backgroundColor: cardBg, borderColor },
+              keyboardAvoidancePadding > 0 && { paddingBottom: keyboardAvoidancePadding },
+            ]}
+          >
             {activeConversation ? (
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -690,7 +778,7 @@ export default function MessagesScreen() {
                       ref={flatListRef}
                       data={messages}
                       keyExtractor={(item) => item._id}
-                      contentContainerStyle={{ padding: 16, gap: 12 }}
+                      contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 20 }}
                       keyboardShouldPersistTaps="handled"
                       keyboardDismissMode="interactive"
                       onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
@@ -698,7 +786,7 @@ export default function MessagesScreen() {
                       renderItem={({ item }) => {
                         const currentUserId = String(currentUser?.id || (currentUser as any)?._id || '');
                         const senderId = String(item.sender?._id || item.sender?.id || item.sender || '');
-                        const isMe = Boolean(currentUserId && senderId && currentUserId === senderId);
+                        const isMe = Boolean(currentUserId && senderId && currentUserId === senderId) || Boolean(item.sending);
                         const timeStr = item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
                         const photoUrl = resolveImageUrl(item.sender?.profilePicture);
 
@@ -743,7 +831,7 @@ export default function MessagesScreen() {
                                 </Text>
                                 {isMe && (
                                   <MaterialIcons
-                                    name={item.read ? 'done-all' : 'done'}
+                                    name={item.sending ? 'access-time' : item.read ? 'done-all' : 'done'}
                                     size={14}
                                     color={isMe ? 'rgba(0,0,0,0.6)' : goldPrimary}
                                   />
@@ -800,7 +888,14 @@ export default function MessagesScreen() {
                   </Pressable>
 
                   <TextInput
-                    style={[styles.chatInput, { backgroundColor: innerCardBg, color: textPrimary, borderColor }]}
+                    style={[
+                      styles.chatInput,
+                      {
+                        backgroundColor: innerCardBg,
+                        color: textPrimary,
+                        borderColor: messageInput.trim().length > 0 ? goldPrimary : borderColor,
+                      }
+                    ]}
                     placeholder={`Message ${activeConversation.otherUser?.fullName?.split(' ')[0] || 'broker'}...`}
                     placeholderTextColor={textMuted}
                     value={messageInput}
@@ -809,7 +904,19 @@ export default function MessagesScreen() {
                     onFocus={() => {
                       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
                     }}
-                    multiline={false}
+                    multiline={true}
+                    blurOnSubmit={false}
+                    selectionColor={goldPrimary}
+                    cursorColor={goldPrimary}
+                    returnKeyType="send"
+                    {...(Platform.OS === 'web' ? {
+                      onKeyPress: (e: any) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault?.();
+                          handleSendMessage();
+                        }
+                      }
+                    } : {})}
                   />
 
                   <Pressable
@@ -1048,34 +1155,40 @@ const styles = StyleSheet.create({
   },
   inputToolbar: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderTopWidth: 1,
     gap: 8,
   },
   mediaAttachBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
+    marginBottom: 1,
   },
   chatInput: {
     flex: 1,
-    height: 40,
-    borderRadius: 20,
+    minHeight: 42,
+    maxHeight: 110,
+    borderRadius: 21,
     paddingHorizontal: 16,
-    fontSize: 13.5,
+    paddingTop: Platform.OS === 'ios' ? 10 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 10 : 8,
+    fontSize: 14.5,
     borderWidth: 1,
+    textAlignVertical: 'center',
   },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 1,
   },
   emptyChatCircle: {
     width: 90,

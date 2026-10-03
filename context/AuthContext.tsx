@@ -117,7 +117,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     restoreSession();
   }, []);
 
+  const FOLLOWING_SET_KEY = 'boolok_following_users_set';
+
   const signIn = async (newToken: string, newUser: AuthUser) => {
+    await removeValue(FOLLOWING_SET_KEY);
     await saveValue(TOKEN_KEY, newToken);
     await saveValue(USER_KEY, JSON.stringify(newUser));
     setToken(newToken);
@@ -125,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    await removeValue(FOLLOWING_SET_KEY);
     await removeValue(TOKEN_KEY);
     await removeValue(USER_KEY);
     setToken(null);
