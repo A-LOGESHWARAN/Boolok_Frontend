@@ -38,7 +38,7 @@ type PickedImage = {
 
 export default function CreatePostScreen() {
     const { user } = useAuth();
-    const { theme } = useTheme();
+    const { theme, isDark } = useTheme();
 
     const [content, setContent] = useState('');
     const [image, setImage] = useState<PickedImage | null>(null);
@@ -140,77 +140,122 @@ export default function CreatePostScreen() {
     };
 
     return (
-        <ScrollView
-            style={[styles.container, { backgroundColor: theme.surfaceContainerLowest }]}
-            contentContainerStyle={styles.content}
-        >
-            <View style={styles.header}>
-                <Pressable onPress={() => router.back()} hitSlop={10}>
-                    <MaterialIcons name="close" size={26} color={theme.onSurface} />
-                </Pressable>
-                <Text style={[typography.headlineSm, { color: theme.onSurface }]}>New Post</Text>
-                <Pressable
-                    onPress={handlePost}
-                    disabled={!canPost}
-                    style={[
-                        styles.postButton,
-                        { backgroundColor: theme.primary },
-                        !canPost && { opacity: 0.5 },
-                    ]}
-                >
-                    {posting ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                        <Text style={styles.postButtonText}>Post</Text>
-                    )}
-                </Pressable>
-            </View>
-
-            <View style={styles.userRow}>
-                {user?.profilePicture ? (
-                    <Image source={{ uri: user.profilePicture }} style={styles.avatar} />
-                ) : (
-                    <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: theme.primary }]}>
-                        <Text style={styles.avatarInitial}>
-                            {(user?.fullName?.charAt(0) || 'U').toUpperCase()}
-                        </Text>
-                    </View>
-                )}
-                <Text style={[typography.labelMd, { color: theme.onSurface }]}>
-                    {user?.fullName || 'You'}
-                </Text>
-            </View>
-
-            <TextInput
-                style={[styles.textInput, { color: theme.onSurface }]}
-                placeholder="What's on your mind?"
-                placeholderTextColor={theme.outline}
-                value={content}
-                onChangeText={setContent}
-                multiline
-                editable={!posting}
-            />
-
-            {image && (
-                <View style={styles.imagePreviewWrap}>
-                    <Image source={{ uri: image.uri }} style={styles.imagePreview} />
-                    <Pressable style={styles.removeImageBtn} onPress={removeImage} disabled={posting}>
-                        <MaterialIcons name="close" size={18} color="#fff" />
+        <View style={{ flex: 1 }}>
+            <ScrollView
+                style={[styles.container, { backgroundColor: theme.surfaceContainerLowest }]}
+                contentContainerStyle={styles.content}
+            >
+                <View style={styles.header}>
+                    <Pressable onPress={() => router.back()} hitSlop={10} disabled={posting}>
+                        <MaterialIcons name="close" size={26} color={theme.onSurface} />
+                    </Pressable>
+                    <Text style={[typography.headlineSm, { color: theme.onSurface }]}>New Post</Text>
+                    <Pressable
+                        onPress={handlePost}
+                        disabled={!canPost}
+                        style={[
+                            styles.postButton,
+                            { backgroundColor: theme.primary },
+                            !canPost && { opacity: 0.5 },
+                        ]}
+                    >
+                        {posting ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <Text style={styles.postButtonText}>Post</Text>
+                        )}
                     </Pressable>
                 </View>
-            )}
 
-            <Pressable
-                style={[styles.attachButton, { borderColor: theme.outlineVariant }]}
-                onPress={pickImage}
-                disabled={posting}
-            >
-                <MaterialIcons name="image" size={22} color={theme.primary} />
-                <Text style={[typography.labelMd, { color: theme.primary, marginLeft: spacing.sm }]}>
-                    {image ? 'Change photo' : 'Add photo'}
-                </Text>
-            </Pressable>
-        </ScrollView>
+                <View style={styles.userRow}>
+                    {user?.profilePicture ? (
+                        <Image source={{ uri: user.profilePicture }} style={styles.avatar} />
+                    ) : (
+                        <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: theme.primary }]}>
+                            <Text style={styles.avatarInitial}>
+                                {(user?.fullName?.charAt(0) || 'U').toUpperCase()}
+                            </Text>
+                        </View>
+                    )}
+                    <Text style={[typography.labelMd, { color: theme.onSurface }]}>
+                        {user?.fullName || 'You'}
+                    </Text>
+                </View>
+
+                <TextInput
+                    style={[styles.textInput, { color: theme.onSurface }]}
+                    placeholder="What's on your mind?"
+                    placeholderTextColor={theme.outline}
+                    value={content}
+                    onChangeText={setContent}
+                    multiline
+                    editable={!posting}
+                />
+
+                {image && (
+                    <View style={styles.imagePreviewWrap}>
+                        <Image source={{ uri: image.uri }} style={styles.imagePreview} />
+                        <Pressable style={styles.removeImageBtn} onPress={removeImage} disabled={posting}>
+                            <MaterialIcons name="close" size={18} color="#fff" />
+                        </Pressable>
+                    </View>
+                )}
+
+                <Pressable
+                    style={[styles.attachButton, { borderColor: theme.outlineVariant }]}
+                    onPress={pickImage}
+                    disabled={posting}
+                >
+                    <MaterialIcons name="image" size={22} color={theme.primary} />
+                    <Text style={[typography.labelMd, { color: theme.primary, marginLeft: spacing.sm }]}>
+                        {image ? 'Change photo' : 'Add photo'}
+                    </Text>
+                </Pressable>
+            </ScrollView>
+
+            {/* ── Uploading Animation Overlay ── */}
+            {posting && (
+                <View
+                    style={[
+                        StyleSheet.absoluteFillObject,
+                        {
+                            backgroundColor: isDark ? 'rgba(6, 11, 19, 0.94)' : 'rgba(255, 255, 255, 0.94)',
+                            zIndex: 9999,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            padding: 24,
+                        },
+                    ]}
+                >
+                    <View
+                        style={{
+                            width: 80,
+                            height: 80,
+                            borderRadius: 40,
+                            borderWidth: 3,
+                            borderColor: 'rgba(218, 165, 32, 0.25)',
+                            borderTopColor: theme.primary,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 18,
+                            shadowColor: theme.primary,
+                            shadowOffset: { width: 0, height: 4 },
+                            shadowOpacity: 0.35,
+                            shadowRadius: 12,
+                        }}
+                    >
+                        <ActivityIndicator size="large" color={theme.primary} />
+                    </View>
+
+                    <Text style={{ color: theme.onSurface, fontSize: 16, fontWeight: '800', marginBottom: 6 }}>
+                        {image ? 'Uploading image & publishing post...' : 'Publishing your post...'}
+                    </Text>
+                    <Text style={{ color: theme.onSurfaceVariant, fontSize: 12, textAlign: 'center' }}>
+                        Synchronizing with Boolok Real Estate Network
+                    </Text>
+                </View>
+            )}
+        </View>
     );
 }
 

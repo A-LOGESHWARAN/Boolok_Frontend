@@ -1229,7 +1229,7 @@ function AppLayoutContent() {
         {(() => {
           const isMessages = pathname?.includes('messages');
           const isChatActive = isMessages && Boolean(params.conv || params.userId || params.username);
-          const shouldHideBottomNav = !isWide && (isKeyboardVisible || isChatActive || pathname?.includes('insights'));
+          const shouldHideBottomNav = !isWide && (isKeyboardVisible || isChatActive);
 
           return (
             <>

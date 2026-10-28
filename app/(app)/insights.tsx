@@ -426,6 +426,8 @@ const VideoItem = ({
   const [deleting, setDeleting] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [videoHasError, setVideoHasError] = useState(false);
   const [showHeartBurst, setShowHeartBurst] = useState(false);
   const [expandedInsight, setExpandedInsight] = useState(false);
 
@@ -1123,6 +1125,15 @@ const VideoItem = ({
             muted={isMuted}
             playsInline
             preload="auto"
+            onLoadedData={() => {
+              setIsVideoLoaded(true);
+              setVideoHasError(false);
+            }}
+            onError={() => {
+              console.warn('[reels] Video element failed to load:', item.videoUrl);
+              setVideoHasError(true);
+              setIsVideoLoaded(false);
+            }}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             style={{
@@ -1132,7 +1143,9 @@ const VideoItem = ({
               position: 'absolute',
               top: 0,
               left: 0,
+              opacity: isVideoLoaded && !videoHasError ? 1 : 0,
               pointerEvents: 'none',
+              transition: 'opacity 0.25s ease',
             }}
           />
         ) : (
@@ -1700,6 +1713,34 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any)
   const [location, setLocation] = useState('');
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStageText, setUploadStageText] = useState('Uploading video...');
+
+  useEffect(() => {
+    let interval: any;
+    if (uploading) {
+      interval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev < 40) {
+            setUploadStageText('Uploading high-definition property video...');
+            return prev + 6;
+          }
+          if (prev < 75) {
+            setUploadStageText('Optimizing bitrate & cover streams...');
+            return prev + 4;
+          }
+          if (prev < 92) {
+            setUploadStageText('Generating AI Property Intelligence match...');
+            return prev + 2;
+          }
+          return prev;
+        });
+      }, 300);
+    } else {
+      setUploadProgress(0);
+    }
+    return () => clearInterval(interval);
+  }, [uploading]);
 
   useEffect(() => {
     if (visible && !authorName) {
@@ -1763,6 +1804,8 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any)
     }
 
     setUploading(true);
+    setUploadProgress(15);
+    setUploadStageText('Preparing video & property media...');
     try {
       const token = Platform.OS === 'web'
         ? localStorage.getItem('userToken')
@@ -1773,13 +1816,19 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any)
       if (Platform.OS === 'web') {
         const blobRes = await fetch(video.uri);
         const blob = await blobRes.blob();
-        const ext = video.uri.split('.').pop() || 'mp4';
-        formData.append('video', blob, `upload.${ext}`);
+        const mimeType = blob.type || video.mimeType || 'video/mp4';
+        const ext = mimeType.includes('webm')
+          ? 'webm'
+          : mimeType.includes('quicktime')
+          ? 'mov'
+          : 'mp4';
+        const videoFile = new File([blob], `reel_${Date.now()}.${ext}`, { type: mimeType });
+        formData.append('video', videoFile);
       } else {
-        const ext = video.uri.split('.').pop() || 'mp4';
+        const cleanName = video.fileName || `upload_${Date.now()}.mp4`;
         (formData as any).append('video', {
           uri: video.uri,
-          name: `upload.${ext}`,
+          name: cleanName,
           type: video.mimeType || 'video/mp4',
         });
       }
@@ -1788,10 +1837,17 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any)
         if (Platform.OS === 'web') {
           const thumbBlobRes = await fetch(coverAsset.uri);
           const thumbBlob = await thumbBlobRes.blob();
-          formData.append('thumbnail', thumbBlob, 'cover.jpg');
-          formData.append('poster', thumbBlob, 'cover.jpg');
+          const thumbMime = thumbBlob.type || coverAsset.mimeType || 'image/jpeg';
+          const thumbFile = new File([thumbBlob], `cover_${Date.now()}.jpg`, { type: thumbMime });
+          formData.append('thumbnail', thumbFile);
+          formData.append('poster', thumbFile);
         } else {
           (formData as any).append('thumbnail', {
+            uri: coverAsset.uri,
+            name: 'cover.jpg',
+            type: coverAsset.mimeType || 'image/jpeg',
+          });
+          (formData as any).append('poster', {
             uri: coverAsset.uri,
             name: 'cover.jpg',
             type: coverAsset.mimeType || 'image/jpeg',
@@ -1808,37 +1864,42 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any)
       formData.append('location', location.trim());
       formData.append('caption', caption.trim());
 
+      // Do NOT set Content-Type manually: Axios and browser automatically supply the multipart boundary
       const response = await axios.post(`${API_BASE_URL}/api/reels`, formData, {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data',
         },
       });
 
       const finalPoster = response.data?.poster || response.data?.thumbnail || currentCoverUri;
-      onUploaded({
-        ...response.data,
-        title: title.trim(),
-        location: location.trim(),
-        authorName: effectiveAuthor,
-        caption: caption.trim(),
-        author: {
-          _id: user?.id || user?._id || 'you',
-          fullName: effectiveAuthor,
-          username: user?.username || 'you',
-          profilePicture: user?.profilePicture || null,
-          isVerified: true,
-        },
-        poster: finalPoster,
-        thumbnail: finalPoster,
-      });
-      reset();
-      onClose();
+      setUploadProgress(100);
+      setUploadStageText('✓ Published Successfully!');
+
+      setTimeout(() => {
+        onUploaded({
+          ...response.data,
+          title: title.trim(),
+          location: location.trim(),
+          authorName: effectiveAuthor,
+          caption: caption.trim(),
+          author: {
+            _id: user?.id || user?._id || 'you',
+            fullName: effectiveAuthor,
+            username: user?.username || 'you',
+            profilePicture: user?.profilePicture || null,
+            isVerified: true,
+          },
+          poster: finalPoster,
+          thumbnail: finalPoster,
+        });
+        reset();
+        onClose();
+        setUploading(false);
+      }, 450);
     } catch (err: any) {
       console.error(err);
-      Alert.alert('Upload failed', err?.response?.data?.message || err.message);
-    } finally {
       setUploading(false);
+      Alert.alert('Upload failed', err?.response?.data?.message || err.message);
     }
   };
 
@@ -2093,6 +2154,102 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any)
               </Pressable>
             </View>
           </ScrollView>
+
+          {/* ── Luxury Animated Uploading Overlay ── */}
+          {uploading && (
+            <Animated.View
+              entering={FadeIn.duration(200)}
+              style={[
+                StyleSheet.absoluteFillObject,
+                {
+                  backgroundColor: isDark ? 'rgba(6, 11, 19, 0.96)' : 'rgba(255, 255, 255, 0.96)',
+                  borderRadius: 20,
+                  zIndex: 9999,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  padding: 24,
+                },
+              ]}
+            >
+              {/* Glowing Outer Ring */}
+              <View
+                style={{
+                  width: 86,
+                  height: 86,
+                  borderRadius: 43,
+                  borderWidth: 3,
+                  borderColor: 'rgba(218, 165, 32, 0.25)',
+                  borderTopColor: theme.primary,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  marginBottom: 18,
+                  shadowColor: theme.primary,
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 16,
+                }}
+              >
+                <ActivityIndicator size="large" color={theme.primary} />
+              </View>
+
+              {/* Status Heading */}
+              <Text
+                style={{
+                  color: theme.onSurface,
+                  fontSize: 16,
+                  fontWeight: '800',
+                  letterSpacing: 0.5,
+                  marginBottom: 6,
+                  textAlign: 'center',
+                }}
+              >
+                {uploadStageText}
+              </Text>
+
+              <Text
+                style={{
+                  color: theme.onSurfaceVariant,
+                  fontSize: 12,
+                  marginBottom: 20,
+                  textAlign: 'center',
+                }}
+              >
+                Encoding reel and synchronizing property data...
+              </Text>
+
+              {/* Animated Progress Bar */}
+              <View
+                style={{
+                  width: '82%',
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+                  overflow: 'hidden',
+                  marginBottom: 10,
+                }}
+              >
+                <View
+                  style={{
+                    height: '100%',
+                    width: `${uploadProgress}%`,
+                    backgroundColor: theme.primary,
+                    borderRadius: 3,
+                  }}
+                />
+              </View>
+
+              <Text
+                style={{
+                  color: theme.primary,
+                  fontSize: 13,
+                  fontWeight: '800',
+                  letterSpacing: 1,
+                }}
+              >
+                {Math.round(uploadProgress)}%
+              </Text>
+            </Animated.View>
+          )}
         </Animated.View>
       </View>
     </Modal>
