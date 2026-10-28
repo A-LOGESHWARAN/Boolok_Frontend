@@ -3,10 +3,13 @@ import {
   View, Text, StyleSheet, ScrollView, Pressable, TextInput,
   Platform, Alert, Modal, useWindowDimensions,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../context/ThemeContext';
 import { spacing, radius, typography } from '../../constants/theme';
+import HousePlanLoadingAnimation from '../../components/HousePlanLoadingAnimation';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PlotShape = 'rectangular' | 'square' | 'l-shaped' | 'irregular';
@@ -173,9 +176,22 @@ function SegCtrl({ value, onChange, options, theme }: any) {
 function RadioCard({ value, current, onPress, label, icon, sub, theme }: any) {
   const active = value === current;
   return (
-    <Pressable onPress={() => onPress(value)}
-      style={[styles.radioCard, { borderColor: active ? theme.primary : theme.outlineVariant, backgroundColor: active ? 'rgba(218,165,32,0.08)' : theme.surfaceContainerLowest }]}>
-      {icon && <Text style={styles.cardIcon}>{icon}</Text>}
+    <Pressable
+      onPress={() => onPress(value)}
+      style={({ pressed }) => [
+        styles.radioCard,
+        {
+          borderColor: active ? theme.primary : theme.outlineVariant,
+          backgroundColor: active ? 'rgba(218,165,32,0.1)' : theme.surfaceContainerLowest,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      {icon && (
+        <View style={[styles.radioIconWrap, active && { backgroundColor: theme.primary + '20' }]}>
+          <Text style={styles.cardIcon}>{icon}</Text>
+        </View>
+      )}
       <View style={{ flex: 1 }}>
         <Text style={[styles.cardLabel, { color: active ? theme.primary : theme.onSurface }]}>{label}</Text>
         {sub && <Text style={[styles.cardSub, { color: theme.onSurfaceVariant }]}>{sub}</Text>}
@@ -187,15 +203,42 @@ function RadioCard({ value, current, onPress, label, icon, sub, theme }: any) {
   );
 }
 
-function ChipCard({ value, active, onToggle, label, icon, theme }: any) {
+function ChipCard({ value, active, onToggle, label, icon, iconName, theme }: any) {
   return (
-    <Pressable onPress={() => onToggle(value)}
-      style={[styles.chipCard, { borderColor: active ? theme.primary : theme.outlineVariant, backgroundColor: active ? 'rgba(218,165,32,0.08)' : theme.surfaceContainerLowest }]}>
-      {icon && <Text style={{ fontSize: 20, marginBottom: 4 }}>{icon}</Text>}
-      <Text style={[styles.chipLabel, { color: active ? theme.primary : theme.onSurface }]}>{label}</Text>
-      {active && <View style={[styles.chipCheck, { backgroundColor: theme.primary }]}>
-        <MaterialIcons name="check" size={10} color={theme.onPrimary} />
-      </View>}
+    <Pressable
+      onPress={() => onToggle(value)}
+      style={({ pressed }) => [
+        styles.chipCard,
+        {
+          borderColor: active ? theme.primary : theme.outlineVariant,
+          backgroundColor: active ? 'rgba(218,165,32,0.12)' : theme.surfaceContainerLowest,
+          opacity: pressed ? 0.8 : 1,
+        },
+      ]}
+    >
+      {(iconName || icon) && (
+        <View style={[styles.chipIconWrap, active && { backgroundColor: theme.primary + '25' }]}>
+          {iconName ? (
+            <MaterialIcons name={iconName} size={16} color={active ? theme.primary : theme.onSurfaceVariant} />
+          ) : (
+            <Text style={{ fontSize: 14 }}>{icon}</Text>
+          )}
+        </View>
+      )}
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.chipLabel,
+          { color: active ? theme.primary : theme.onSurface, fontWeight: active ? '700' : '600' },
+        ]}
+      >
+        {label}
+      </Text>
+      {active && (
+        <View style={[styles.chipCheck, { backgroundColor: theme.primary }]}>
+          <MaterialIcons name="check" size={10} color="#0A0F23" />
+        </View>
+      )}
     </Pressable>
   );
 }
@@ -253,6 +296,7 @@ export default function BlueprintScreen() {
   const [form, setForm] = useState<FormData>(DEFAULTS);
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [showJson, setShowJson] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
@@ -281,7 +325,7 @@ export default function BlueprintScreen() {
       setStep(s => s + 1);
       scrollRef.current?.scrollTo({ y: 0, animated: true });
     } else {
-      setSubmitted(true);
+      setIsGenerating(true);
       scrollRef.current?.scrollTo({ y: 0, animated: true });
     }
   };
@@ -324,66 +368,206 @@ export default function BlueprintScreen() {
     if (curId === 0) return (
       <View>
         <SectionHead icon="📐" step={1} title="Plot Information" sub="Dimensions, shape, orientation and road access." badge="Required" theme={theme} />
+        
+        {/* Plot Dimensions */}
         <FieldLabel theme={theme}>Plot Dimensions <Text style={{ color: theme.primary }}>*</Text></FieldLabel>
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <TextInput value={String(form.plotWidth)} onChangeText={v => upd('plotWidth', Number(v) || 0)} keyboardType="numeric" placeholder="Width" placeholderTextColor={theme.outline} style={[styles.input, { borderColor: theme.outlineVariant, color: theme.onSurface, backgroundColor: theme.surfaceContainerLowest }]} />
-            <Text style={[styles.inputTag, { color: theme.onSurfaceVariant }]}>Width</Text>
+        <View style={styles.dimRow}>
+          <View style={styles.dimInputBox}>
+            <Text style={[styles.dimLabel, { color: theme.onSurfaceVariant }]}>WIDTH</Text>
+            <TextInput
+              value={form.plotWidth ? String(form.plotWidth) : ''}
+              onChangeText={v => upd('plotWidth', Number(v) || 0)}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor={theme.outline}
+              style={[styles.dimInput, { color: theme.onSurface, backgroundColor: theme.surfaceContainerLowest, borderColor: theme.outlineVariant }]}
+            />
           </View>
-          <Text style={[styles.dimX, { color: theme.onSurfaceVariant }]}>×</Text>
-          <View style={{ flex: 1 }}>
-            <TextInput value={String(form.plotDepth)} onChangeText={v => upd('plotDepth', Number(v) || 0)} keyboardType="numeric" placeholder="Depth" placeholderTextColor={theme.outline} style={[styles.input, { borderColor: theme.outlineVariant, color: theme.onSurface, backgroundColor: theme.surfaceContainerLowest }]} />
-            <Text style={[styles.inputTag, { color: theme.onSurfaceVariant }]}>Depth</Text>
+          <View style={styles.dimTimes}>
+            <Text style={[styles.dimTimesText, { color: theme.primary }]}>×</Text>
           </View>
-          <SegCtrl value={form.plotUnit} onChange={(v: any) => upd('plotUnit', v)} options={[{ value: 'feet', label: 'ft' }, { value: 'meters', label: 'm' }]} theme={theme} />
+          <View style={styles.dimInputBox}>
+            <Text style={[styles.dimLabel, { color: theme.onSurfaceVariant }]}>DEPTH</Text>
+            <TextInput
+              value={form.plotDepth ? String(form.plotDepth) : ''}
+              onChangeText={v => upd('plotDepth', Number(v) || 0)}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor={theme.outline}
+              style={[styles.dimInput, { color: theme.onSurface, backgroundColor: theme.surfaceContainerLowest, borderColor: theme.outlineVariant }]}
+            />
+          </View>
+          <View style={styles.unitToggleWrap}>
+            <Text style={[styles.dimLabel, { color: theme.onSurfaceVariant }]}>UNIT</Text>
+            <SegCtrl
+              value={form.plotUnit}
+              onChange={(v: any) => upd('plotUnit', v)}
+              options={[{ value: 'feet', label: 'ft' }, { value: 'meters', label: 'm' }]}
+              theme={theme}
+            />
+          </View>
         </View>
-        {form.plotWidth > 0 && form.plotDepth > 0 && <Text style={[styles.areaText, { color: theme.primary }]}>Area: {form.plotWidth * form.plotDepth} sq.{form.plotUnit === 'feet' ? 'ft' : 'm'}</Text>}
+        {form.plotWidth > 0 && form.plotDepth > 0 && (
+          <View style={[styles.areaBadge, { backgroundColor: 'rgba(218,165,32,0.1)', borderColor: theme.primary + '50' }]}>
+            <MaterialIcons name="square-foot" size={16} color={theme.primary} />
+            <Text style={[styles.areaBadgeText, { color: theme.primary }]}>
+              Calculated Plot Area: <Text style={{ fontWeight: '800' }}>{(form.plotWidth * form.plotDepth).toLocaleString()} sq.{form.plotUnit === 'feet' ? 'ft' : 'm'}</Text>
+            </Text>
+          </View>
+        )}
+
         <Divider theme={theme} />
+
+        {/* Plot Shape */}
         <FieldLabel theme={theme}>Plot Shape <Text style={{ color: theme.primary }}>*</Text></FieldLabel>
         <View style={styles.grid2}>
-          {(['rectangular', 'square', 'l-shaped', 'irregular'] as PlotShape[]).map(s => (
-            <ChipCard key={s} value={s} active={form.plotShape === s} onToggle={() => upd('plotShape', s)} label={s.charAt(0).toUpperCase() + s.slice(1)} icon={s === 'rectangular' ? '▬' : s === 'square' ? '■' : s === 'l-shaped' ? '⌐' : '⬟'} theme={theme} />
+          {[
+            { s: 'rectangular' as PlotShape, label: 'Rectangular', iconName: 'crop-landscape' },
+            { s: 'square' as PlotShape, label: 'Square', iconName: 'crop-square' },
+            { s: 'l-shaped' as PlotShape, label: 'L-Shaped', iconName: 'polyline' },
+            { s: 'irregular' as PlotShape, label: 'Irregular', iconName: 'architecture' },
+          ].map(({ s, label, iconName }) => (
+            <ChipCard
+              key={s}
+              value={s}
+              active={form.plotShape === s}
+              onToggle={() => upd('plotShape', s)}
+              label={label}
+              iconName={iconName}
+              theme={theme}
+            />
           ))}
         </View>
         {form.plotShape === 'irregular' && (
-          <TextInput value={form.plotShapeDesc} onChangeText={v => upd('plotShapeDesc', v)} placeholder="Describe the shape briefly..." placeholderTextColor={theme.outline} multiline numberOfLines={2} style={[styles.textarea, { borderColor: theme.primary + '60', color: theme.onSurface, backgroundColor: 'rgba(218,165,32,0.05)' }]} />
+          <TextInput
+            value={form.plotShapeDesc}
+            onChangeText={v => upd('plotShapeDesc', v)}
+            placeholder="Describe the shape briefly (e.g., triangular corner, trapezoid)..."
+            placeholderTextColor={theme.outline}
+            multiline
+            numberOfLines={2}
+            style={[styles.textarea, { borderColor: theme.primary + '60', color: theme.onSurface, backgroundColor: 'rgba(218,165,32,0.05)', marginTop: 8 }]}
+          />
         )}
+
         <Divider theme={theme} />
-        <FieldLabel help="Stand at the road facing your plot — that direction is your plot facing." theme={theme}>Facing Direction <Text style={{ color: theme.primary }}>*</Text></FieldLabel>
+
+        {/* Facing Direction */}
+        <FieldLabel help="Stand at the road facing your plot — that direction is your plot facing." theme={theme}>
+          Facing Direction <Text style={{ color: theme.primary }}>*</Text>
+        </FieldLabel>
         <View style={styles.grid4}>
-          {[{ v: 'north', i: '⬆️' }, { v: 'northeast', i: '↗️' }, { v: 'east', i: '➡️' }, { v: 'southeast', i: '↘️' }, { v: 'south', i: '⬇️' }, { v: 'southwest', i: '↙️' }, { v: 'west', i: '⬅️' }, { v: 'northwest', i: '↖️' }].map(({ v, i }) => {
+          {[
+            { v: 'north', label: 'North', short: 'N', icon: 'north' },
+            { v: 'northeast', label: 'North-East', short: 'NE', icon: 'north-east' },
+            { v: 'east', label: 'East', short: 'E', icon: 'east' },
+            { v: 'southeast', label: 'South-East', short: 'SE', icon: 'south-east' },
+            { v: 'south', label: 'South', short: 'S', icon: 'south' },
+            { v: 'southwest', label: 'South-West', short: 'SW', icon: 'south-west' },
+            { v: 'west', label: 'West', short: 'W', icon: 'west' },
+            { v: 'northwest', label: 'North-West', short: 'NW', icon: 'north-west' },
+          ].map(({ v, label, short, icon }) => {
             const active = form.facing === v;
             return (
-              <Pressable key={v} onPress={() => upd('facing', v as FacingDir)} style={[styles.dirBtn, { borderColor: active ? theme.primary : theme.outlineVariant, backgroundColor: active ? 'rgba(218,165,32,0.1)' : theme.surfaceContainerLowest }]}>
-                <Text style={{ fontSize: 18 }}>{i}</Text>
-                <Text style={[styles.dirLabel, { color: active ? theme.primary : theme.onSurfaceVariant }]}>{v.charAt(0).toUpperCase() + v.slice(1, 3)}</Text>
+              <Pressable
+                key={v}
+                onPress={() => upd('facing', v as FacingDir)}
+                style={({ pressed }) => [
+                  styles.dirBtn,
+                  {
+                    borderColor: active ? theme.primary : theme.outlineVariant,
+                    backgroundColor: active ? 'rgba(218,165,32,0.14)' : theme.surfaceContainerLowest,
+                    opacity: pressed ? 0.75 : 1,
+                  },
+                ]}
+              >
+                <View style={[styles.dirIconCircle, active && { backgroundColor: theme.primary + '25' }]}>
+                  <MaterialIcons name={icon as any} size={15} color={active ? theme.primary : theme.onSurfaceVariant} />
+                </View>
+                <Text style={[styles.dirCode, { color: active ? theme.primary : theme.onSurface }]}>{short}</Text>
+                <Text numberOfLines={1} style={[styles.dirLabel, { color: active ? theme.primary : theme.onSurfaceVariant }]}>{label}</Text>
               </Pressable>
             );
           })}
         </View>
+
         <Divider theme={theme} />
+
+        {/* Road Access */}
         <FieldLabel theme={theme}>Road Access <Text style={{ color: theme.primary }}>*</Text></FieldLabel>
         <View style={styles.grid2}>
-          {[{ v: 'front', l: 'Front (Main Road)' }, { v: 'back', l: 'Back' }, { v: 'left', l: 'Left Side' }, { v: 'right', l: 'Right Side' }].map(({ v, l }) => {
+          {[
+            { v: 'front', l: 'Front (Main Road)' },
+            { v: 'back', l: 'Back Access' },
+            { v: 'left', l: 'Left Side' },
+            { v: 'right', l: 'Right Side' },
+          ].map(({ v, l }) => {
             const active = form.roadAccess.includes(v);
             const toggle = () => {
               const next = active ? form.roadAccess.filter(r => r !== v) : [...form.roadAccess, v];
               if (next.length > 0) upd('roadAccess', next);
             };
             return (
-              <Pressable key={v} onPress={toggle} style={[styles.checkCard, { borderColor: active ? theme.primary : theme.outlineVariant, backgroundColor: active ? 'rgba(218,165,32,0.08)' : theme.surfaceContainerLowest }]}>
-                <View style={[styles.checkbox, { borderColor: active ? theme.primary : theme.outline, backgroundColor: active ? theme.primary : 'transparent' }]}>
-                  {active && <MaterialIcons name="check" size={10} color={theme.onPrimary} />}
+              <Pressable
+                key={v}
+                onPress={toggle}
+                style={({ pressed }) => [
+                  styles.checkCard,
+                  {
+                    borderColor: active ? theme.primary : theme.outlineVariant,
+                    backgroundColor: active ? 'rgba(218,165,32,0.12)' : theme.surfaceContainerLowest,
+                    opacity: pressed ? 0.75 : 1,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.checkbox,
+                    {
+                      borderColor: active ? theme.primary : theme.outline,
+                      backgroundColor: active ? theme.primary : 'transparent',
+                    },
+                  ]}
+                >
+                  {active && <MaterialIcons name="check" size={11} color="#0A0F23" />}
                 </View>
-                <Text style={[styles.checkLabel, { color: active ? theme.primary : theme.onSurface }]}>{l}</Text>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.checkLabel,
+                    { color: active ? theme.primary : theme.onSurface, fontWeight: active ? '700' : '600' },
+                  ]}
+                >
+                  {l}
+                </Text>
               </Pressable>
             );
           })}
         </View>
+
         <Divider theme={theme} />
-        <FieldLabel help="Needed to determine if car parking is feasible." theme={theme}>Front Road Width (feet)</FieldLabel>
-        <TextInput value={String(form.roadWidth)} onChangeText={v => upd('roadWidth', Number(v) || 0)} keyboardType="numeric" placeholder="e.g. 20" placeholderTextColor={theme.outline} style={[styles.inputSm, { borderColor: theme.outlineVariant, color: theme.onSurface, backgroundColor: theme.surfaceContainerLowest }]} />
-        {form.roadWidth > 0 && form.roadWidth < 12 && <Warn type="warning" msg="Narrow road (< 12ft) — car parking may be tight." theme={theme} />}
+
+        {/* Front Road Width */}
+        <FieldLabel help="Needed to determine if car parking is feasible." theme={theme}>Front Road Width</FieldLabel>
+        <View style={styles.roadWidthRow}>
+          <View style={[styles.roadInputWrap, { backgroundColor: theme.surfaceContainerLowest, borderColor: theme.outlineVariant }]}>
+            <MaterialIcons name="add-road" size={18} color={theme.primary} style={{ marginLeft: 10 }} />
+            <TextInput
+              value={form.roadWidth ? String(form.roadWidth) : ''}
+              onChangeText={v => upd('roadWidth', Number(v) || 0)}
+              keyboardType="numeric"
+              placeholder="e.g. 20"
+              placeholderTextColor={theme.outline}
+              style={[styles.roadInput, { color: theme.onSurface }]}
+            />
+            <View style={[styles.roadUnitTag, { backgroundColor: theme.surfaceContainer }]}>
+              <Text style={[styles.roadUnitText, { color: theme.onSurfaceVariant }]}>{form.plotUnit === 'feet' ? 'ft' : 'm'}</Text>
+            </View>
+          </View>
+        </View>
+        {form.roadWidth > 0 && form.roadWidth < 12 && (
+          <Warn type="warning" msg="Narrow road (< 12ft) — car parking may be tight." theme={theme} />
+        )}
       </View>
     );
 
@@ -600,11 +784,22 @@ export default function BlueprintScreen() {
             {[{ v: 'kitchen_southeast', l: 'Kitchen MUST be Southeast', i: '🍳' }, { v: 'master_southwest', l: 'Master Bedroom MUST be Southwest', i: '🛏️' }, { v: 'entrance_north_east', l: 'Entrance MUST face North/East', i: '🚪' }, { v: 'pooja_northeast', l: 'Pooja room MUST be Northeast', i: '🙏' }, { v: 'toilets_northwest', l: 'Toilets MUST be Northwest', i: '🚽' }, { v: 'avoid_major', l: 'Avoid major defects only', i: '🛡️' }].map(({ v, l, i }) => {
               const active = form.vastuReqs.includes(v);
               return (
-                <Pressable key={v} onPress={() => { const next = active ? form.vastuReqs.filter(r => r !== v) : [...form.vastuReqs, v]; upd('vastuReqs', next); }} style={[styles.checkCard, { borderColor: active ? theme.primary : theme.outlineVariant, backgroundColor: active ? 'rgba(218,165,32,0.08)' : theme.surfaceContainerLowest, marginBottom: 8 }]}>
+                <Pressable
+                  key={v}
+                  onPress={() => { const next = active ? form.vastuReqs.filter(r => r !== v) : [...form.vastuReqs, v]; upd('vastuReqs', next); }}
+                  style={({ pressed }) => [
+                    styles.checkCardRow,
+                    {
+                      borderColor: active ? theme.primary : theme.outlineVariant,
+                      backgroundColor: active ? 'rgba(218,165,32,0.1)' : theme.surfaceContainerLowest,
+                      opacity: pressed ? 0.8 : 1,
+                    },
+                  ]}
+                >
                   <View style={[styles.checkbox, { borderColor: active ? theme.primary : theme.outline, backgroundColor: active ? theme.primary : 'transparent' }]}>
-                    {active && <MaterialIcons name="check" size={10} color={theme.onPrimary} />}
+                    {active && <MaterialIcons name="check" size={10} color="#0A0F23" />}
                   </View>
-                  <Text style={{ fontSize: 18, marginRight: 8 }}>{i}</Text>
+                  <Text style={{ fontSize: 16, marginRight: 8 }}>{i}</Text>
                   <Text style={[styles.checkLabel, { color: active ? theme.primary : theme.onSurface, flex: 1 }]}>{l}</Text>
                 </Pressable>
               );
@@ -668,12 +863,34 @@ export default function BlueprintScreen() {
         <Divider theme={theme} />
         <FieldLabel help="Affects window placement and natural light." theme={theme}>Neighboring Buildings / Walls</FieldLabel>
         <View style={styles.grid4}>
-          {[{ v: 'north', i: '⬆️' }, { v: 'south', i: '⬇️' }, { v: 'east', i: '➡️' }, { v: 'west', i: '⬅️' }].map(({ v, i }) => {
+          {[
+            { v: 'north', label: 'North', short: 'N', icon: 'north' },
+            { v: 'east', label: 'East', short: 'E', icon: 'east' },
+            { v: 'south', label: 'South', short: 'S', icon: 'south' },
+            { v: 'west', label: 'West', short: 'W', icon: 'west' },
+          ].map(({ v, label, short, icon }) => {
             const active = form.neighborSides.includes(v);
             return (
-              <Pressable key={v} onPress={() => { const next = active ? form.neighborSides.filter(s => s !== v) : [...form.neighborSides, v]; upd('neighborSides', next); }} style={[styles.dirBtn, { borderColor: active ? theme.primary : theme.outlineVariant, backgroundColor: active ? 'rgba(218,165,32,0.1)' : theme.surfaceContainerLowest }]}>
-                <Text style={{ fontSize: 20 }}>{i}</Text>
-                <Text style={[styles.dirLabel, { color: active ? theme.primary : theme.onSurfaceVariant }]}>{v.charAt(0).toUpperCase() + v.slice(1)}</Text>
+              <Pressable
+                key={v}
+                onPress={() => {
+                  const next = active ? form.neighborSides.filter(s => s !== v) : [...form.neighborSides, v];
+                  upd('neighborSides', next);
+                }}
+                style={({ pressed }) => [
+                  styles.dirBtn,
+                  {
+                    borderColor: active ? theme.primary : theme.outlineVariant,
+                    backgroundColor: active ? 'rgba(218,165,32,0.14)' : theme.surfaceContainerLowest,
+                    opacity: pressed ? 0.75 : 1,
+                  },
+                ]}
+              >
+                <View style={[styles.dirIconCircle, active && { backgroundColor: theme.primary + '25' }]}>
+                  <MaterialIcons name={icon as any} size={15} color={active ? theme.primary : theme.onSurfaceVariant} />
+                </View>
+                <Text style={[styles.dirCode, { color: active ? theme.primary : theme.onSurface }]}>{short}</Text>
+                <Text numberOfLines={1} style={[styles.dirLabel, { color: active ? theme.primary : theme.onSurfaceVariant }]}>{label}</Text>
               </Pressable>
             );
           })}
@@ -717,90 +934,441 @@ export default function BlueprintScreen() {
     return null;
   };
 
-  // ─── Submitted / JSON view ──
+  // ─── Loading / Generation Animation View ──
+  if (isGenerating) {
+    return (
+      <HousePlanLoadingAnimation
+        theme={theme}
+        isDark={isDark}
+        formData={form}
+        onComplete={() => {
+          setIsGenerating(false);
+          setSubmitted(true);
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        }}
+        onViewPlan={() => {
+          setIsGenerating(false);
+          setSubmitted(true);
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        }}
+      />
+    );
+  }
+
+  // ─── Submitted / Plan Preview view ──
   if (submitted) {
     const json = buildJson();
     const jsonStr = JSON.stringify(json, null, 2);
     return (
-      <ScrollView style={{ flex: 1, backgroundColor: theme.surface }} contentContainerStyle={{ padding: spacing.md }}>
-        <LinearGradient colors={['#DAA520', '#F59E0B']} style={styles.successHeader}>
-          <Text style={{ fontSize: 48 }}>🏡</Text>
-          <Text style={[styles.successTitle, { color: theme.onPrimary }]}>Requirements Submitted!</Text>
-          <Text style={[styles.successSub, { color: theme.onPrimary + 'CC' }]}>Your house plan requirements have been captured. Review the generated JSON below.</Text>
-        </LinearGradient>
-        <Pressable onPress={() => setShowJson(!showJson)} style={[styles.jsonToggle, { backgroundColor: theme.surfaceContainer, borderColor: theme.outlineVariant }]}>
-          <MaterialIcons name={showJson ? 'expand-less' : 'expand-more'} size={20} color={theme.primary} />
-          <Text style={[styles.jsonToggleText, { color: theme.onSurface }]}>{showJson ? 'Hide' : 'Show'} Generated JSON</Text>
-        </Pressable>
-        {showJson && (
-          <ScrollView horizontal style={[styles.jsonBox, { backgroundColor: isDark ? '#060A16' : '#0A0F23' }]}>
-            <Text style={styles.jsonText}>{jsonStr}</Text>
-          </ScrollView>
-        )}
-        <Pressable onPress={() => { setSubmitted(false); setStep(0); setForm(DEFAULTS); }} style={[styles.primaryBtn, { backgroundColor: theme.primary, marginTop: 16 }]}>
-          <Text style={[styles.primaryBtnText, { color: theme.onPrimary }]}>Start a New Plan</Text>
-        </Pressable>
-      </ScrollView>
+      <View style={[styles.root, { backgroundColor: theme.surface }]}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[
+            styles.scrollContent,
+            isWide && { maxWidth: 960, alignSelf: 'center', width: '100%' },
+            { paddingBottom: 40 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ── Top Header Navigation ── */}
+          <View style={styles.topNavRow}>
+            <Pressable
+              onPress={() => router.back()}
+              style={[
+                styles.roundBackBtn,
+                {
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+                  borderColor: theme.outlineVariant,
+                },
+              ]}
+            >
+              <MaterialIcons name="arrow-back" size={18} color={theme.onSurface} />
+            </Pressable>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={[styles.statusPill, { backgroundColor: 'rgba(34, 197, 94, 0.15)', borderColor: '#22c55e' }]}>
+                <View style={[styles.pulseDot, { backgroundColor: '#22c55e' }]} />
+                <Text style={{ color: '#22c55e', fontSize: 11, fontWeight: '800' }}>CONCEPT SYNTHESIZED</Text>
+              </View>
+            </View>
+          </View>
+
+          <LinearGradient colors={['#DAA520', '#F59E0B']} style={styles.successHeader}>
+            <Text style={{ fontSize: 48 }}>🏡</Text>
+            <Text style={[styles.successTitle, { color: '#0A0F23' }]}>Your Home Concept is Ready!</Text>
+            <Text style={[styles.successSub, { color: '#0A0F23CC' }]}>
+              Boolok AI Architect has synthesized your brief into an intelligent floor plan concept.
+            </Text>
+          </LinearGradient>
+
+          {/* Concept Highlights Recap */}
+          <View style={[styles.summaryCard, { backgroundColor: isDark ? '#0d1726' : theme.surfaceContainerLowest, borderColor: isDark ? 'rgba(218, 165, 32, 0.3)' : theme.outlineVariant }]}>
+            <View style={styles.summaryHeader}>
+              <MaterialIcons name="fact-check" size={20} color={theme.primary} />
+              <Text style={[styles.summaryTitle, { color: theme.onSurface }]}>Synthesized Plan Highlights</Text>
+            </View>
+
+            <View style={styles.summaryGrid}>
+              <View style={[styles.summaryItem, { backgroundColor: isDark ? '#142033' : theme.surfaceContainer }]}>
+                <Text style={styles.summaryEmoji}>📐</Text>
+                <Text style={[styles.summaryLabel, { color: theme.onSurfaceVariant }]}>Plot Size</Text>
+                <Text style={[styles.summaryValue, { color: theme.onSurface }]}>
+                  {form.plotWidth} × {form.plotDepth} {form.plotUnit}
+                </Text>
+              </View>
+
+              <View style={[styles.summaryItem, { backgroundColor: isDark ? '#142033' : theme.surfaceContainer }]}>
+                <Text style={styles.summaryEmoji}>🧭</Text>
+                <Text style={[styles.summaryLabel, { color: theme.onSurfaceVariant }]}>Orientation</Text>
+                <Text style={[styles.summaryValue, { color: theme.onSurface }]}>
+                  {form.facing.toUpperCase()}-Facing
+                </Text>
+              </View>
+
+              <View style={[styles.summaryItem, { backgroundColor: isDark ? '#142033' : theme.surfaceContainer }]}>
+                <Text style={styles.summaryEmoji}>🛏️</Text>
+                <Text style={[styles.summaryLabel, { color: theme.onSurfaceVariant }]}>Rooms</Text>
+                <Text style={[styles.summaryValue, { color: theme.onSurface }]}>
+                  {form.bedrooms} BHK · {form.stories} {form.stories === 1 ? 'Floor' : 'Floors'}
+                </Text>
+              </View>
+
+              <View style={[styles.summaryItem, { backgroundColor: isDark ? '#142033' : theme.surfaceContainer }]}>
+                <Text style={styles.summaryEmoji}>🍳</Text>
+                <Text style={[styles.summaryLabel, { color: theme.onSurfaceVariant }]}>Kitchen</Text>
+                <Text style={[styles.summaryValue, { color: theme.onSurface }]}>
+                  {form.kitchenType.charAt(0).toUpperCase() + form.kitchenType.slice(1)}
+                </Text>
+              </View>
+
+              <View style={[styles.summaryItem, { backgroundColor: isDark ? '#142033' : theme.surfaceContainer }]}>
+                <Text style={styles.summaryEmoji}>🏛️</Text>
+                <Text style={[styles.summaryLabel, { color: theme.onSurfaceVariant }]}>Style</Text>
+                <Text style={[styles.summaryValue, { color: theme.onSurface }]}>
+                  {form.archStyle.charAt(0).toUpperCase() + form.archStyle.slice(1)}
+                </Text>
+              </View>
+
+              <View style={[styles.summaryItem, { backgroundColor: isDark ? '#142033' : theme.surfaceContainer }]}>
+                <Text style={styles.summaryEmoji}>🧭</Text>
+                <Text style={[styles.summaryLabel, { color: theme.onSurfaceVariant }]}>Vastu</Text>
+                <Text style={[styles.summaryValue, { color: theme.onSurface }]}>
+                  {form.vastuEnabled ? form.vastuStrictness.charAt(0).toUpperCase() + form.vastuStrictness.slice(1) : 'Standard'}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* JSON Specifications Toggle */}
+          <Pressable onPress={() => setShowJson(!showJson)} style={[styles.jsonToggle, { backgroundColor: isDark ? '#0d1726' : theme.surfaceContainer, borderColor: theme.outlineVariant }]}>
+            <MaterialIcons name={showJson ? 'expand-less' : 'expand-more'} size={20} color={theme.primary} />
+            <Text style={[styles.jsonToggleText, { color: theme.onSurface }]}>{showJson ? 'Hide' : 'Show'} Full Specifications JSON</Text>
+          </Pressable>
+
+          {showJson && (
+            <ScrollView horizontal style={[styles.jsonBox, { backgroundColor: isDark ? '#060A16' : '#0A0F23' }]}>
+              <Text style={styles.jsonText}>{jsonStr}</Text>
+            </ScrollView>
+          )}
+
+          {/* Replay Generation Animation CTA */}
+          <Pressable
+            onPress={() => setIsGenerating(true)}
+            style={({ pressed }) => [
+              styles.outlineBtn,
+              { borderColor: theme.primary, opacity: pressed ? 0.75 : 1, marginTop: 16 },
+            ]}
+          >
+            <MaterialIcons name="replay" size={18} color={theme.primary} />
+            <Text style={[styles.outlineBtnText, { color: theme.primary }]}>Replay AI Generation Animation</Text>
+          </Pressable>
+
+          {/* Start New Plan */}
+          <Pressable
+            onPress={() => { setSubmitted(false); setStep(0); setForm(DEFAULTS); }}
+            style={({ pressed }) => [
+              styles.primaryBtn,
+              { backgroundColor: theme.primary, marginTop: 12, opacity: pressed ? 0.85 : 1 },
+            ]}
+          >
+            <Text style={[styles.primaryBtnText, { color: theme.onPrimary }]}>Start a New Plan</Text>
+          </Pressable>
+        </ScrollView>
+      </View>
     );
   }
 
   // ─── Main wizard render ──
   return (
     <View style={[styles.root, { backgroundColor: theme.surface }]}>
-      {/* Progress header */}
-      <View style={[styles.progressHeader, { backgroundColor: theme.surfaceContainerLowest, borderBottomColor: theme.outlineVariant }]}>
-        <View style={styles.progressRow}>
-          <Text style={[styles.progressLabel, { color: theme.onSurfaceVariant }]}>Step {step + 1} of {totalSteps}</Text>
-          <Text style={[styles.progressPct, { color: theme.primary }]}>{progress}%</Text>
-        </View>
-        <View style={[styles.progressTrack, { backgroundColor: theme.surfaceContainer }]}>
-          <LinearGradient colors={['#DAA520', '#F59E0B']} style={[styles.progressFill, { width: `${progress}%` as any }]} />
-        </View>
-        {/* Step pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10 }}>
-          <View style={{ flexDirection: 'row', gap: 6 }}>
-            {activeSteps.map((s, idx) => {
-              const done = idx < step;
-              const active = idx === step;
-              return (
-                <Pressable key={s.id} onPress={() => idx <= step && setStep(idx)}
-                  style={[styles.stepPill, { backgroundColor: active ? 'rgba(218,165,32,0.15)' : done ? 'rgba(22,163,74,0.1)' : theme.surfaceContainer, borderColor: active ? theme.primary : done ? '#16a34a' : theme.outlineVariant }]}>
-                  <View style={[styles.pillDot, { backgroundColor: active ? theme.primary : done ? '#16a34a' : theme.outlineVariant }]}>
-                    {done ? <MaterialIcons name="check" size={8} color="#fff" /> : <Text style={{ fontSize: 8, color: active ? theme.onPrimary : theme.onSurfaceVariant, fontWeight: '700' }}>{idx + 1}</Text>}
-                  </View>
-                  <Text style={[styles.pillLabel, { color: active ? theme.primary : done ? '#16a34a' : theme.onSurfaceVariant }]}>{s.label}</Text>
-                </Pressable>
-              );
-            })}
+      <ScrollView
+        ref={scrollRef}
+        style={{ flex: 1 }}
+        contentContainerStyle={[
+          styles.scrollContent,
+          isWide && { maxWidth: 960, alignSelf: 'center', width: '100%' },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ── Top Header Navigation ── */}
+        <View style={styles.topNavRow}>
+          <Pressable
+            onPress={() => router.back()}
+            style={[
+              styles.roundBackBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+                borderColor: theme.outlineVariant,
+              },
+            ]}
+          >
+            <MaterialIcons name="arrow-back" size={18} color={theme.onSurface} />
+          </Pressable>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={[styles.statusPill, { backgroundColor: 'rgba(218, 165, 32, 0.15)', borderColor: theme.primary }]}>
+              <View style={[styles.pulseDot, { backgroundColor: theme.primary }]} />
+              <Text style={{ color: theme.primary, fontSize: 11, fontWeight: '800' }}>AI POWERED</Text>
+            </View>
+
+            <View style={[styles.statusPill, { backgroundColor: isDark ? '#142033' : '#E2E8F0', borderColor: theme.outlineVariant }]}>
+              <Text style={{ color: theme.onSurfaceVariant, fontSize: 11, fontWeight: '700' }}>V2.4 ARCHITECT</Text>
+            </View>
           </View>
-        </ScrollView>
-      </View>
-
-      {/* Step content */}
-      <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={[styles.content, { paddingBottom: 24 }]} keyboardShouldPersistTaps="handled">
-        {renderStep()}
-      </ScrollView>
-
-      {/* Navigation footer */}
-      <View style={[styles.footer, { backgroundColor: theme.surfaceContainerLowest, borderTopColor: theme.outlineVariant, paddingVertical: 12, paddingHorizontal: spacing.md }]}>
-        <Pressable onPress={goPrev} disabled={step === 0}
-          style={({ pressed }) => [styles.backBtn, { borderColor: theme.outlineVariant, opacity: step === 0 ? 0.3 : pressed ? 0.7 : 1 }]}>
-          <MaterialIcons name="chevron-left" size={20} color={theme.onSurface} />
-          <Text style={[styles.backBtnText, { color: theme.onSurface }]}>Back</Text>
-        </Pressable>
-        <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={[styles.stepBadge, { color: theme.onSurfaceVariant }]}>{activeSteps[step]?.badge}</Text>
         </View>
-        <Pressable onPress={goNext}
-          style={({ pressed }) => [styles.nextBtn, { opacity: pressed ? 0.85 : 1 }]}>
-          <LinearGradient colors={['#DAA520', '#F59E0B']} style={styles.nextBtnInner}>
-            <Text style={[styles.nextBtnText, { color: '#0A0F23' }]}>
-              {step === totalSteps - 1 ? 'Submit & Generate' : 'Next'}
-            </Text>
-            <MaterialIcons name="chevron-right" size={18} color="#0A0F23" />
-          </LinearGradient>
-        </Pressable>
-      </View>
+
+        {/* ── Hero Banner (Matching legal.tsx) ── */}
+        <Animated.View entering={FadeInDown.duration(400)} style={styles.heroSection}>
+          <View style={[styles.iconHalo, { backgroundColor: 'rgba(218, 165, 32, 0.12)', borderColor: theme.primary }]}>
+            <MaterialCommunityIcons name="floor-plan" size={38} color={theme.primary} />
+          </View>
+
+          <Text style={[styles.heroPreTitle, { color: theme.primary }]}>
+            BOOLOK AI ADVISORY SUITE
+          </Text>
+
+          <Text style={[styles.heroTitle, { color: theme.onSurface }]}>
+            House Plan Generator
+          </Text>
+
+          <Text style={[styles.heroSubtitle, { color: theme.onSurfaceVariant }]}>
+            Autonomous Architectural Floor Planning, Vastu Compliance Analysis &amp; Smart Structural Specifications for Modern &amp; Luxury Homes.
+          </Text>
+        </Animated.View>
+
+        {/* ── Centered Planner Card Container ── */}
+        <Animated.View
+          entering={FadeInDown.delay(100).duration(400)}
+          style={[
+            styles.plannerCard,
+            {
+              backgroundColor: isDark ? '#0d1726' : '#FFFFFF',
+              borderColor: isDark ? 'rgba(218, 165, 32, 0.3)' : '#E2E8F0',
+            },
+          ]}
+        >
+          {/* Progress header inside card */}
+          <View style={styles.plannerProgressHeader}>
+            <View style={styles.progressRow}>
+              <Text style={[styles.progressLabel, { color: theme.onSurfaceVariant }]}>
+                Step {step + 1} of {totalSteps} — {activeSteps[step]?.label}
+              </Text>
+              <Text style={[styles.progressPct, { color: theme.primary }]}>{progress}%</Text>
+            </View>
+            <View style={[styles.progressTrack, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : theme.surfaceContainer }]}>
+              <LinearGradient colors={['#DAA520', '#F59E0B']} style={[styles.progressFill, { width: `${progress}%` as any }]} />
+            </View>
+
+            {/* Step pills */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {activeSteps.map((s, idx) => {
+                  const done = idx < step;
+                  const active = idx === step;
+                  return (
+                    <Pressable
+                      key={s.id}
+                      onPress={() => idx <= step && setStep(idx)}
+                      style={[
+                        styles.stepPill,
+                        {
+                          backgroundColor: active
+                            ? 'rgba(218,165,32,0.18)'
+                            : done
+                            ? 'rgba(22,163,74,0.12)'
+                            : isDark
+                            ? 'rgba(255,255,255,0.04)'
+                            : theme.surfaceContainer,
+                          borderColor: active
+                            ? theme.primary
+                            : done
+                            ? '#16a34a'
+                            : theme.outlineVariant,
+                        },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.pillDot,
+                          {
+                            backgroundColor: active
+                              ? theme.primary
+                              : done
+                              ? '#16a34a'
+                              : isDark
+                              ? 'rgba(255,255,255,0.1)'
+                              : theme.outlineVariant,
+                          },
+                        ]}
+                      >
+                        {done ? (
+                          <MaterialIcons name="check" size={8} color="#fff" />
+                        ) : (
+                          <Text
+                            style={{
+                              fontSize: 8,
+                              color: active ? '#0A0F23' : theme.onSurfaceVariant,
+                              fontWeight: '800',
+                            }}
+                          >
+                            {idx + 1}
+                          </Text>
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          styles.pillLabel,
+                          {
+                            color: active
+                              ? theme.primary
+                              : done
+                              ? '#16a34a'
+                              : theme.onSurfaceVariant,
+                            fontWeight: active ? '700' : '600',
+                          },
+                        ]}
+                      >
+                        {s.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+
+          <Divider theme={theme} />
+
+          {/* Active Step Form Content */}
+          <View style={{ paddingVertical: 6 }}>
+            {renderStep()}
+          </View>
+
+          <Divider theme={theme} />
+
+          {/* Card Navigation Footer */}
+          <View style={styles.plannerFooter}>
+            <Pressable
+              onPress={goPrev}
+              disabled={step === 0}
+              style={({ pressed }) => [
+                styles.backBtnAction,
+                {
+                  borderColor: theme.outlineVariant,
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : theme.surfaceContainerLowest,
+                  opacity: step === 0 ? 0.3 : pressed ? 0.7 : 1,
+                },
+              ]}
+            >
+              <MaterialIcons name="chevron-left" size={20} color={theme.onSurface} />
+              <Text style={[styles.backBtnText, { color: theme.onSurface }]}>Back</Text>
+            </Pressable>
+
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={[styles.stepBadge, { color: theme.onSurfaceVariant }]}>
+                {activeSteps[step]?.badge}
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={goNext}
+              style={({ pressed }) => [styles.nextBtn, { opacity: pressed ? 0.85 : 1 }]}
+            >
+              <LinearGradient colors={['#DAA520', '#F59E0B']} style={styles.nextBtnInner}>
+                <Text style={[styles.nextBtnText, { color: '#0A0F23' }]}>
+                  {step === totalSteps - 1 ? 'Submit & Generate' : 'Next Step'}
+                </Text>
+                <MaterialIcons name="chevron-right" size={18} color="#0A0F23" />
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </Animated.View>
+
+        {/* ── Upcoming Architectural Capabilities (Matching legal.tsx Grid) ── */}
+        <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.featuresSection}>
+          <Text style={[styles.sectionHeading, { color: theme.onSurface }]}>
+            Upcoming House Plan AI Capabilities
+          </Text>
+
+          <View style={styles.featuresGrid}>
+            {[
+              {
+                icon: 'floor-plan',
+                title: 'Autonomous Floor Layouts',
+                desc: 'Generative room arrangement optimizing daylight, natural cross-ventilation, and standard municipal setbacks.',
+                badge: 'GEN-AI CORE',
+              },
+              {
+                icon: 'compass-rose',
+                title: 'Certified Vastu AI Engine',
+                desc: 'Comprehensive quadrant analysis ensuring auspicious orientation for main entrances, pooja rooms, and kitchens.',
+                badge: 'VASTU SCAN',
+              },
+              {
+                icon: 'ruler-square-compass',
+                title: 'Zoning & Setback Scanner',
+                desc: 'Instant verification of approved setback distances, front road access, and car parking feasibility against municipal norms.',
+                badge: 'CIVIL AUDIT',
+              },
+              {
+                icon: 'home-lightning-bolt',
+                title: 'Smart MEP & Structural Specs',
+                desc: 'Automated synthesis of staircase clearances, structural load recommendations, and utility stack alignments.',
+                badge: 'MEP SPECS',
+              },
+            ].map((feat, index) => (
+              <View
+                key={index}
+                style={[
+                  styles.featureCard,
+                  isWide && { width: '48.5%' },
+                  {
+                    backgroundColor: isDark ? '#0d1726' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : '#E2E8F0',
+                  },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <View style={[styles.featureIconBox, { backgroundColor: 'rgba(218, 165, 32, 0.1)' }]}>
+                    <MaterialCommunityIcons name={feat.icon as any} size={22} color={theme.primary} />
+                  </View>
+                  <View style={[styles.featureBadge, { borderColor: theme.outlineVariant, backgroundColor: isDark ? '#142033' : '#F1F5F9' }]}>
+                    <Text style={{ color: theme.primary, fontSize: 10, fontWeight: '800' }}>{feat.badge}</Text>
+                  </View>
+                </View>
+                <Text style={{ color: theme.onSurface, fontSize: 15, fontWeight: '800', marginBottom: 6 }}>
+                  {feat.title}
+                </Text>
+                <Text style={{ color: theme.onSurfaceVariant, fontSize: 12.5, lineHeight: 18 }}>
+                  {feat.desc}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }
@@ -808,6 +1376,127 @@ export default function BlueprintScreen() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: 40,
+  },
+  topNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  roundBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  heroSection: {
+    alignItems: 'center',
+    textAlign: 'center',
+    marginBottom: 28,
+  },
+  iconHalo: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  heroPreTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 2,
+    marginBottom: 6,
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 0.3,
+    marginBottom: 10,
+  },
+  heroSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 21,
+    maxWidth: 580,
+  },
+  plannerCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    marginBottom: 32,
+  },
+  plannerProgressHeader: {
+    marginBottom: 8,
+  },
+  plannerFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  backBtnAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+  },
+  featuresSection: {
+    marginBottom: 32,
+  },
+  sectionHeading: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 16,
+  },
+  featuresGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  featureCard: {
+    width: '100%',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 18,
+  },
+  featureIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  featureBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
   progressHeader: { paddingHorizontal: spacing.md, paddingTop: 14, paddingBottom: 10, borderBottomWidth: 1 },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   progressLabel: { fontSize: 12, fontWeight: '600' },
@@ -842,25 +1531,148 @@ const styles = StyleSheet.create({
   segCtrl: { flexDirection: 'row', borderRadius: 12, padding: 4, gap: 4 },
   segBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   segText: { fontSize: 13 },
-  radioCard: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.xl, borderWidth: 2, padding: spacing.sm, marginBottom: 10, gap: 10 },
-  cardIcon: { fontSize: 22 },
-  cardLabel: { fontSize: 14, fontWeight: '700' },
-  cardSub: { fontSize: 12, marginTop: 2, lineHeight: 16 },
-  radioDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  radioCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  radioIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  cardIcon: { fontSize: 18 },
+  cardLabel: { fontSize: 13.5, fontWeight: '700' },
+  cardSub: { fontSize: 11.5, marginTop: 2, lineHeight: 16 },
+  radioDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   radioDotInner: { width: 8, height: 8, borderRadius: 4 },
-  chipCard: { borderRadius: 14, borderWidth: 2, padding: 12, alignItems: 'center', justifyContent: 'center', minHeight: 72, position: 'relative' },
-  chipLabel: { fontSize: 12, fontWeight: '700', textAlign: 'center', marginTop: 2 },
-  chipCheck: { position: 'absolute', top: 6, right: 6, width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  checkCard: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1.5, padding: 12, gap: 10 },
-  checkbox: { width: 16, height: 16, borderRadius: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  checkLabel: { fontSize: 13, fontWeight: '600', flex: 1 },
+  chipCard: {
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    gap: 8,
+    minHeight: 46,
+  },
+  chipIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  chipLabel: { fontSize: 12.5, flex: 1 },
+  chipCheck: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkCard: {
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    gap: 8,
+    minHeight: 46,
+  },
+  checkCardRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 8,
+    minHeight: 46,
+  },
+  checkbox: { width: 17, height: 17, borderRadius: 5, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  checkLabel: { fontSize: 12.5, fontWeight: '600', flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalBadge: { fontSize: 14, fontWeight: '800' },
-  grid2: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 4 },
-  grid4: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
-  dirBtn: { flex: 1, minWidth: '22%', borderRadius: 12, borderWidth: 1.5, padding: 8, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  dirLabel: { fontSize: 10, fontWeight: '700' },
+  grid2: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginBottom: 4 },
+  grid4: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', marginBottom: 4 },
+  dirBtn: {
+    width: '23%',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    minHeight: 64,
+  },
+  dirIconCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  dirCode: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  dirLabel: { fontSize: 9.5, fontWeight: '600', textAlign: 'center' },
+  dimRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, marginBottom: 8 },
+  dimInputBox: { flex: 1 },
+  dimLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 5 },
+  dimInput: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 15,
+    fontWeight: '700',
+    height: 44,
+    textAlign: 'center',
+  },
+  dimTimes: { paddingBottom: 10, alignItems: 'center', justifyContent: 'center' },
+  dimTimesText: { fontSize: 18, fontWeight: '800' },
+  unitToggleWrap: { width: 90 },
+  areaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  areaBadgeText: { fontSize: 12, fontWeight: '600' },
+  roadWidthRow: { flexDirection: 'row', alignItems: 'center' },
+  roadInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    height: 44,
+    flex: 1,
+    maxWidth: 220,
+    overflow: 'hidden',
+  },
+  roadInput: { flex: 1, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, fontWeight: '700', height: 44 },
+  roadUnitTag: { paddingHorizontal: 12, height: 44, alignItems: 'center', justifyContent: 'center', borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.08)' },
+  roadUnitText: { fontSize: 12, fontWeight: '600' },
   input: { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, height: 44 },
   inputSm: { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, height: 44, maxWidth: 160 },
   inputTag: { fontSize: 10, marginTop: 4, fontWeight: '600', textAlign: 'center' },
@@ -888,9 +1700,14 @@ const styles = StyleSheet.create({
   jsonText: { fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', web: 'monospace' }), fontSize: 11, color: '#4ade80', lineHeight: 18 },
   primaryBtn: { borderRadius: 16, padding: 16, alignItems: 'center' },
   primaryBtnText: { fontSize: 15, fontWeight: '800' },
-  // chip grid item sizing
+  outlineBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 16, padding: 15, borderWidth: 1.5 },
+  outlineBtnText: { fontSize: 14, fontWeight: '700' },
+  summaryCard: { borderRadius: 18, borderWidth: 1, padding: 16, marginBottom: 16 },
+  summaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  summaryTitle: { fontSize: 14, fontWeight: '800' },
+  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  summaryItem: { flex: 1, minWidth: '46%', padding: 12, borderRadius: 12 },
+  summaryEmoji: { fontSize: 18, marginBottom: 4 },
+  summaryLabel: { fontSize: 11, fontWeight: '600', marginBottom: 2 },
+  summaryValue: { fontSize: 13, fontWeight: '700' },
 });
-
-// Make chips fill 2-column grid evenly
-(styles as any).chipCard = { ...styles.chipCard, width: '48%' };
-(styles as any).checkCard = { ...styles.checkCard, width: '48%' };

@@ -32,6 +32,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useSocket } from '../../context/SocketContext';
 import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
+import { formatSmartDateTime, formatConversationTime, getMessageDateSeparator, isSameCalendarDay } from '../../lib/dateTime';
 import BoolokLogo from '../../components/BoolokLogo';
 
 const COMMUNITY_MEMBERS_DIRECTORY = [
@@ -654,8 +655,8 @@ export default function MessagesScreen() {
                           <Text style={[styles.convName, { color: textPrimary }]} numberOfLines={1}>
                             {other.fullName || other.username || 'Boolok Broker'}
                           </Text>
-                          <Text style={[styles.convTime, { color: textMuted }]}>
-                            {item.updatedAt ? new Date(item.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                          <Text style={[styles.convTime, { color: item.unreadCount > 0 ? goldPrimary : textMuted, fontWeight: item.unreadCount > 0 ? '700' : '500' }]}>
+                            {formatConversationTime(item.updatedAt || item.lastMessage?.createdAt)}
                           </Text>
                         </View>
                         <Text style={[styles.convHeadline, { color: textMuted }]} numberOfLines={1}>
@@ -783,59 +784,76 @@ export default function MessagesScreen() {
                       keyboardDismissMode="interactive"
                       onLayout={() => flatListRef.current?.scrollToEnd({ animated: false })}
                       onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-                      renderItem={({ item }) => {
+                      renderItem={({ item, index }) => {
                         const currentUserId = String(currentUser?.id || (currentUser as any)?._id || '');
                         const senderId = String(item.sender?._id || item.sender?.id || item.sender || '');
                         const isMe = Boolean(currentUserId && senderId && currentUserId === senderId) || Boolean(item.sending);
                         const timeStr = item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                        const smartTimeStr = formatSmartDateTime(item.createdAt);
                         const photoUrl = resolveImageUrl(item.sender?.profilePicture);
 
+                        const prevItem = index > 0 ? messages[index - 1] : null;
+                        const showDateSeparator = !prevItem || !isSameCalendarDay(prevItem.createdAt, item.createdAt);
+                        const dateSeparatorLabel = getMessageDateSeparator(item.createdAt);
+
                         return (
-                          <View style={[styles.messageRow, isMe ? styles.messageRowMe : styles.messageRowOther]}>
-                            {!isMe && (
-                              photoUrl ? (
-                                <Image source={{ uri: photoUrl }} style={styles.bubbleAvatar} />
-                              ) : (
-                                <View style={[styles.bubbleAvatar, { backgroundColor: isDark ? '#1a273c' : '#FEF3C7', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: goldPrimary }]}>
-                                  <Text style={{ color: goldPrimary, fontSize: 11, fontWeight: '800' }}>
-                                    {(item.sender?.fullName || 'B')[0]?.toUpperCase()}
+                          <View>
+                            {showDateSeparator && dateSeparatorLabel ? (
+                              <View style={styles.dateSeparatorRow}>
+                                <View style={[styles.dateSeparatorPill, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', borderColor }]}>
+                                  <Text style={[styles.dateSeparatorText, { color: textMuted }]}>
+                                    {dateSeparatorLabel}
                                   </Text>
                                 </View>
-                              )
-                            )}
+                              </View>
+                            ) : null}
 
-                            <View
-                              style={[
-                                styles.messageBubble,
-                                isMe ? [styles.bubbleMe, { backgroundColor: isDark ? '#daa520' : '#d97706' }] : [styles.bubbleOther, { backgroundColor: cardBg, borderColor }],
-                              ]}
-                            >
-                              {/* Attached Media */}
-                              {Boolean(item.mediaUrl) && (
-                                <Image
-                                  source={{ uri: resolveImageUrl(item.mediaUrl)! }}
-                                  style={{ width: 220, height: 140, borderRadius: 8, marginBottom: 6 }}
-                                  resizeMode="cover"
-                                />
+                            <View style={[styles.messageRow, isMe ? styles.messageRowMe : styles.messageRowOther]}>
+                              {!isMe && (
+                                photoUrl ? (
+                                  <Image source={{ uri: photoUrl }} style={styles.bubbleAvatar} />
+                                ) : (
+                                  <View style={[styles.bubbleAvatar, { backgroundColor: isDark ? '#1a273c' : '#FEF3C7', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: goldPrimary }]}>
+                                    <Text style={{ color: goldPrimary, fontSize: 11, fontWeight: '800' }}>
+                                      {(item.sender?.fullName || 'B')[0]?.toUpperCase()}
+                                    </Text>
+                                  </View>
+                                )
                               )}
 
-                              {Boolean(item.text) && (
-                                <Text style={[styles.messageText, { color: isMe ? '#000000' : textPrimary }]}>
-                                  {item.text}
-                                </Text>
-                              )}
-
-                              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
-                                <Text style={[styles.messageTime, { color: isMe ? 'rgba(0,0,0,0.6)' : textMuted }]}>
-                                  {timeStr}
-                                </Text>
-                                {isMe && (
-                                  <MaterialIcons
-                                    name={item.sending ? 'access-time' : item.read ? 'done-all' : 'done'}
-                                    size={14}
-                                    color={isMe ? 'rgba(0,0,0,0.6)' : goldPrimary}
+                              <View
+                                style={[
+                                  styles.messageBubble,
+                                  isMe ? [styles.bubbleMe, { backgroundColor: isDark ? '#daa520' : '#d97706' }] : [styles.bubbleOther, { backgroundColor: cardBg, borderColor }],
+                                ]}
+                              >
+                                {/* Attached Media */}
+                                {Boolean(item.mediaUrl) && (
+                                  <Image
+                                    source={{ uri: resolveImageUrl(item.mediaUrl)! }}
+                                    style={{ width: 220, height: 140, borderRadius: 8, marginBottom: 6 }}
+                                    resizeMode="cover"
                                   />
                                 )}
+
+                                {Boolean(item.text) && (
+                                  <Text style={[styles.messageText, { color: isMe ? '#000000' : textPrimary }]}>
+                                    {item.text}
+                                  </Text>
+                                )}
+
+                                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 4 }}>
+                                  <Text style={[styles.messageTime, { color: isMe ? 'rgba(0,0,0,0.6)' : textMuted }]}>
+                                    {smartTimeStr || timeStr}
+                                  </Text>
+                                  {isMe && (
+                                    <MaterialIcons
+                                      name={item.sending ? 'access-time' : item.read ? 'done-all' : 'done'}
+                                      size={14}
+                                      color={isMe ? 'rgba(0,0,0,0.6)' : goldPrimary}
+                                    />
+                                  )}
+                                </View>
                               </View>
                             </View>
                           </View>
@@ -1197,5 +1215,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
+  },
+  dateSeparatorRow: {
+    alignItems: 'center',
+    marginVertical: 12,
+  },
+  dateSeparatorPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 0.5,
+  },
+  dateSeparatorText: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
 });

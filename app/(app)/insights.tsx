@@ -31,6 +31,7 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
+import { formatSmartDateTime } from '../../lib/dateTime';
 
 const DUMMY_VIDEOS = [
   {
@@ -238,6 +239,59 @@ const DEFAULT_POSTERS: Record<string, string> = {
   'Margaret River Vineyard': 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200',
 };
 
+const PROPERTY_COVER_PRESETS = [
+  { id: 'villa', label: 'Luxury Villa', url: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200' },
+  { id: 'estate', label: 'Glass Estate', url: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200' },
+  { id: 'penthouse', label: 'Sky Penthouse', url: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200' },
+  { id: 'waterfront', label: 'Coastal Haven', url: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200' },
+  { id: 'commercial', label: 'Commercial HQ', url: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200' },
+  { id: 'alpine', label: 'Zen Retreat', url: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?w=1200' },
+];
+
+function resolveCoverUrl(item: any): string {
+  if (item?.poster && typeof item.poster === 'string' && item.poster.trim()) {
+    return item.poster.startsWith('http') || item.poster.startsWith('data:') || item.poster.startsWith('file:')
+      ? item.poster
+      : `${API_BASE_URL}${item.poster}`;
+  }
+  if (item?.thumbnail && typeof item.thumbnail === 'string' && item.thumbnail.trim()) {
+    return item.thumbnail.startsWith('http') || item.thumbnail.startsWith('data:') || item.thumbnail.startsWith('file:')
+      ? item.thumbnail
+      : `${API_BASE_URL}${item.thumbnail}`;
+  }
+  if (item?.title && DEFAULT_POSTERS[item.title]) {
+    return DEFAULT_POSTERS[item.title];
+  }
+  const seed = String(item?._id || item?.title || item?.videoUrl || 'boolok_property');
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  const idx = Math.abs(hash) % PROPERTY_COVER_PRESETS.length;
+  return PROPERTY_COVER_PRESETS[idx].url;
+}
+
+function getLocalUploadedReels(): any[] {
+  try {
+    if (Platform.OS === 'web') {
+      const raw = localStorage.getItem('boolok_user_uploaded_reels');
+      return raw ? JSON.parse(raw) : [];
+    }
+  } catch (_) {}
+  return [];
+}
+
+function saveLocalUploadedReel(reel: any) {
+  try {
+    if (Platform.OS === 'web') {
+      const list = getLocalUploadedReels();
+      const updated = [reel, ...list.filter((r: any) => r._id !== reel._id)];
+      localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify(updated));
+    }
+  } catch (_) {}
+}
+
 const MarketIntelligenceSidebar = ({ theme, isDark }: { theme: any, isDark: boolean }) => {
   const cardBg = isDark ? theme.surfaceContainerHigh : theme.surface;
   const [isExpanded, setIsExpanded] = useState(false);
@@ -377,7 +431,7 @@ const VideoItem = ({
 
   // Follow author state
   const authorId = item.author?._id || item.author?.id || item.author?.username || 'sai';
-  const authorName = item.author?.fullName || item.author?.name || 'Verified Advisor';
+  const authorName = item.authorName || item.author?.fullName || item.author?.name || 'Verified Advisor';
   const authorHandle = item.author?.username ? `@${item.author.username}` : '@boolok_pro';
   const authorAvatar = item.author?.profilePicture || item.author?.avatar;
 
@@ -475,7 +529,7 @@ const VideoItem = ({
         const raw = localStorage.getItem(`boolok_comments_${item._id}`);
         if (raw) {
           const cached = JSON.parse(raw);
-          if (Array.isArray(cached) && cached.length > 0) {
+          if (Array.isArray(cached)) {
             return cached;
           }
         }
@@ -483,6 +537,24 @@ const VideoItem = ({
     }
     return base;
   });
+
+  // Keep comments accurately synchronized with active item to avoid stale or recycled counts
+  useEffect(() => {
+    let base = Array.isArray(item.comments) ? item.comments : [];
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem(`boolok_comments_${item._id}`);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (Array.isArray(cached)) {
+            setComments(cached);
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+    setComments(base);
+  }, [item._id, item.comments]);
   const [showComments, setShowComments] = useState(false);
   const [commentInput, setCommentInput] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
@@ -607,9 +679,15 @@ const VideoItem = ({
     setIsMuted(nextMuted);
 
     if (Platform.OS === 'web' && webVideoRef.current) {
-      webVideoRef.current.muted = nextMuted;
+      const vid = webVideoRef.current;
+      vid.muted = nextMuted;
+      vid.volume = 1.0;
+      if (!nextMuted) {
+        vid.play().catch(() => {});
+      }
     } else if (player) {
       player.muted = nextMuted;
+      player.volume = 1.0;
     }
   };
 
@@ -632,6 +710,12 @@ const VideoItem = ({
         triggerHeartBurst();
       }
     } else {
+      if (isMuted && Platform.OS === 'web' && webVideoRef.current) {
+        const vid = webVideoRef.current;
+        vid.muted = false;
+        vid.volume = 1.0;
+        setIsMuted(false);
+      }
       togglePlay();
     }
     lastTapRef.current = now;
@@ -662,6 +746,19 @@ const VideoItem = ({
         const lSet = lRaw ? JSON.parse(lRaw) : {};
         if (nextState) lSet[item._id] = true; else delete lSet[item._id];
         localStorage.setItem('boolok_liked_reels_set', JSON.stringify(lSet));
+
+        // Also update boolok_user_uploaded_reels so profile stays in sync
+        const rawList = localStorage.getItem('boolok_user_uploaded_reels');
+        if (rawList) {
+          const list = JSON.parse(rawList);
+          const idx = list.findIndex((r: any) => r._id === item._id || r.id === item._id);
+          if (idx !== -1) {
+            list[idx].likes = nextCount;
+            list[idx].likesCount = nextCount;
+            list[idx].isLiked = nextState;
+            localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify(list));
+          }
+        }
       } else {
         const pRaw = await SecureStore.getItemAsync('boolok_post_likes');
         const pCache = pRaw ? JSON.parse(pRaw) : {};
@@ -887,6 +984,16 @@ const VideoItem = ({
     try {
       if (Platform.OS === 'web') {
         localStorage.setItem(`boolok_comments_${item._id}`, JSON.stringify(updatedComments));
+        const rawList = localStorage.getItem('boolok_user_uploaded_reels');
+        if (rawList) {
+          const list = JSON.parse(rawList);
+          const idx = list.findIndex((r: any) => r._id === item._id || r.id === item._id);
+          if (idx !== -1) {
+            list[idx].comments = updatedComments;
+            list[idx].commentsCount = updatedComments.length;
+            localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify(list));
+          }
+        }
       } else {
         await SecureStore.setItemAsync(`boolok_comments_${item._id}`, JSON.stringify(updatedComments));
       }
@@ -955,14 +1062,21 @@ const VideoItem = ({
 
   const currentUserId = String(user?.id || user?._id || '');
   const currentUsername = String(user?.username || '').toLowerCase();
+  const currentFullName = String(user?.fullName || '').trim().toLowerCase();
   const authorUserId = String(item.author?._id || item.author?.id || '');
   const authorUserHandle = String(item.author?.username || '').toLowerCase();
+  const authorDisplayName = String(authorName || item.authorName || item.author?.fullName || '').trim().toLowerCase();
 
   const isUploadedByMe = Boolean(
     (currentUserId && authorUserId && currentUserId === authorUserId) ||
     (currentUsername && authorUserHandle && currentUsername === authorUserHandle) ||
+    (currentFullName && authorDisplayName && currentFullName === authorDisplayName) ||
+    (currentUsername && authorDisplayName && currentUsername === authorDisplayName) ||
+    (item.authorName && currentFullName && item.authorName.trim().toLowerCase() === currentFullName) ||
     authorUserId === 'you' ||
+    authorUserId === 'self' ||
     authorUserHandle === 'you' ||
+    authorUserHandle === 'self' ||
     authorUserHandle === 'logeshwaran' ||
     authorUserHandle === 'logeshwarana' ||
     authorUserId === 'logeshwarana'
@@ -993,11 +1107,7 @@ const VideoItem = ({
         {/* Background Cover Image fallback so screen is NEVER black */}
         <Image
           source={{
-            uri:
-              item.poster ||
-              item.thumbnail ||
-              DEFAULT_POSTERS[item.title] ||
-              'https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=1200',
+            uri: resolveCoverUrl(item),
           }}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
@@ -1007,12 +1117,7 @@ const VideoItem = ({
           <video
             ref={webVideoRef}
             src={item.videoUrl}
-            poster={
-              item.poster ||
-              item.thumbnail ||
-              DEFAULT_POSTERS[item.title] ||
-              'https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=1200'
-            }
+            poster={resolveCoverUrl(item)}
             autoPlay
             loop
             muted={isMuted}
@@ -1080,13 +1185,16 @@ const VideoItem = ({
         <View style={styles.topRightContainer}>
           <TouchableOpacity
             onPress={toggleMute}
-            style={styles.soundBtn}
+            style={[
+              styles.soundBtn,
+              !isMuted && { backgroundColor: theme.primary, borderColor: theme.primary },
+            ]}
             activeOpacity={0.7}
           >
             <MaterialIcons
               name={isMuted ? 'volume-off' : 'volume-up'}
               size={18}
-              color="#ffffff"
+              color={isMuted ? '#ffffff' : '#000000'}
             />
           </TouchableOpacity>
 
@@ -1123,7 +1231,7 @@ const VideoItem = ({
             )}
           </TouchableOpacity>
 
-          {!isFollowing && (
+          {!isFollowing && !isUploadedByMe && (
             <TouchableOpacity
               onPress={handleToggleFollow}
               style={[styles.miniFollowPlus, { backgroundColor: theme.primary }]}
@@ -1238,25 +1346,27 @@ const VideoItem = ({
             <Text style={styles.authorHandleText} numberOfLines={1}>{authorHandle}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={handleToggleFollow}
-            style={[
-              styles.authorFollowBtn,
-              isFollowing
-                ? { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'rgba(255,255,255,0.3)' }
-                : { backgroundColor: theme.primary, borderColor: theme.primary },
-            ]}
-            activeOpacity={0.8}
-          >
-            <Text
+          {!isUploadedByMe && (
+            <TouchableOpacity
+              onPress={handleToggleFollow}
               style={[
-                styles.authorFollowBtnText,
-                { color: isFollowing ? '#ffffff' : '#000000' },
+                styles.authorFollowBtn,
+                isFollowing
+                  ? { backgroundColor: 'rgba(255,255,255,0.15)', borderColor: 'rgba(255,255,255,0.3)' }
+                  : { backgroundColor: theme.primary, borderColor: theme.primary },
               ]}
+              activeOpacity={0.8}
             >
-              {isFollowing ? 'Following' : 'Follow'}
-            </Text>
-          </TouchableOpacity>
+              <Text
+                style={[
+                  styles.authorFollowBtnText,
+                  { color: isFollowing ? '#ffffff' : '#000000' },
+                ]}
+              >
+                {isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Property Title */}
@@ -1298,13 +1408,22 @@ const VideoItem = ({
           </View>
         )}
 
-        {/* Audio / Music Track Marquee Pill */}
-        <View style={styles.musicPill}>
-          <MaterialCommunityIcons name="music-note" size={13} color="#ffffff" style={{ marginRight: 5 }} />
-          <Text style={styles.musicText} numberOfLines={1}>
-            {item.music || 'Boolok AI · Market Verification Audio'}
+        {/* Audio / Music Track Marquee Pill with Unmute Shortcut */}
+        <TouchableOpacity
+          onPress={toggleMute}
+          activeOpacity={0.8}
+          style={[styles.musicPill, isMuted && { borderColor: 'rgba(249, 192, 61, 0.6)' }]}
+        >
+          <MaterialCommunityIcons
+            name={isMuted ? 'volume-off' : 'music-note'}
+            size={13}
+            color={isMuted ? theme.primary : '#ffffff'}
+            style={{ marginRight: 5 }}
+          />
+          <Text style={[styles.musicText, isMuted && { color: theme.primary, fontWeight: '700' }]} numberOfLines={1}>
+            {isMuted ? '🔇 Muted · Tap for sound' : (item.music || 'Boolok AI · Market Verification Audio')}
           </Text>
-        </View>
+        </TouchableOpacity>
       </LinearGradient>
 
       {/* ── Custom Delete Confirmation Modal ── */}
@@ -1506,7 +1625,7 @@ const VideoItem = ({
                             </Text>
                           </TouchableOpacity>
                           <Text style={styles.commentTime}>
-                            {c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now'}
+                            {formatSmartDateTime(c.createdAt || c.time)}
                           </Text>
                         </View>
                         <Text style={styles.commentText}>{c.text}</Text>
@@ -1571,18 +1690,31 @@ const VideoItem = ({
 };
 
 // ── Upload Modal ─────────────────────────────────────────────────────────────
-function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
+// ── Upload Modal ─────────────────────────────────────────────────────────────
+function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any) {
   const [video, setVideo] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [coverAsset, setCoverAsset] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [selectedPresetUrl, setSelectedPresetUrl] = useState<string>(PROPERTY_COVER_PRESETS[0].url);
+  const [authorName, setAuthorName] = useState<string>(user?.fullName || '');
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
   const [caption, setCaption] = useState('');
   const [uploading, setUploading] = useState(false);
 
+  useEffect(() => {
+    if (visible && !authorName) {
+      setAuthorName(user?.fullName || '');
+    }
+  }, [visible, user?.fullName]);
+
   const reset = () => {
     setVideo(null);
+    setCoverAsset(null);
+    setSelectedPresetUrl(PROPERTY_COVER_PRESETS[0].url);
     setTitle('');
     setLocation('');
     setCaption('');
+    setAuthorName(user?.fullName || '');
   };
 
   const pickVideo = async () => {
@@ -1601,13 +1733,32 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
     }
   };
 
+  const pickCoverImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission required', 'Please allow access to your media library.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.9,
+      allowsEditing: true,
+      aspect: [9, 16],
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setCoverAsset(result.assets[0]);
+    }
+  };
+
+  const currentCoverUri = coverAsset ? coverAsset.uri : selectedPresetUrl;
+
   const handleUpload = async () => {
     if (!video) {
       Alert.alert('No video selected', 'Please choose a video to upload.');
       return;
     }
     if (!title.trim()) {
-      Alert.alert('Missing title', 'Please enter a property title.');
+      Alert.alert('Missing title', 'Please enter a property or reel title.');
       return;
     }
 
@@ -1633,7 +1784,27 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
         });
       }
 
+      if (coverAsset) {
+        if (Platform.OS === 'web') {
+          const thumbBlobRes = await fetch(coverAsset.uri);
+          const thumbBlob = await thumbBlobRes.blob();
+          formData.append('thumbnail', thumbBlob, 'cover.jpg');
+          formData.append('poster', thumbBlob, 'cover.jpg');
+        } else {
+          (formData as any).append('thumbnail', {
+            uri: coverAsset.uri,
+            name: 'cover.jpg',
+            type: coverAsset.mimeType || 'image/jpeg',
+          });
+        }
+      } else if (selectedPresetUrl) {
+        formData.append('thumbnail', selectedPresetUrl);
+        formData.append('poster', selectedPresetUrl);
+      }
+
+      const effectiveAuthor = authorName.trim() || user?.fullName || 'Boolok Creator';
       formData.append('title', title.trim());
+      formData.append('authorName', effectiveAuthor);
       formData.append('location', location.trim());
       formData.append('caption', caption.trim());
 
@@ -1644,7 +1815,23 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
         },
       });
 
-      onUploaded(response.data);
+      const finalPoster = response.data?.poster || response.data?.thumbnail || currentCoverUri;
+      onUploaded({
+        ...response.data,
+        title: title.trim(),
+        location: location.trim(),
+        authorName: effectiveAuthor,
+        caption: caption.trim(),
+        author: {
+          _id: user?.id || user?._id || 'you',
+          fullName: effectiveAuthor,
+          username: user?.username || 'you',
+          profilePicture: user?.profilePicture || null,
+          isVerified: true,
+        },
+        poster: finalPoster,
+        thumbnail: finalPoster,
+      });
       reset();
       onClose();
     } catch (err: any) {
@@ -1659,12 +1846,16 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
 
   return (
     <Modal visible={visible} animationType="none" transparent onRequestClose={onClose}>
-      <Pressable style={uploadStyles.backdrop} onPress={!uploading ? onClose : undefined}>
+      <View style={uploadStyles.modalOverlay}>
+        <Pressable
+          style={uploadStyles.backdropFill}
+          onPress={!uploading ? onClose : undefined}
+        />
         <Animated.View
           entering={SlideInDown.springify().damping(18)}
-          style={[uploadStyles.sheet, { backgroundColor: cardBg }]}
+          style={[uploadStyles.sheet, { backgroundColor: cardBg, maxHeight: '92%' }]}
         >
-          <Pressable>
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={[uploadStyles.handle, { backgroundColor: theme.outlineVariant }]} />
 
             <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
@@ -1676,6 +1867,7 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
               </Text>
             </View>
 
+            {/* Video Picker */}
             <Pressable
               onPress={pickVideo}
               style={[
@@ -1707,7 +1899,7 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
                   style={{ color: video ? theme.primary : theme.onSurface, fontSize: 13, fontWeight: '600' }}
                   numberOfLines={1}
                 >
-                  {video ? (video.fileName ?? video.uri.split('/').pop()) : 'Choose video file'}
+                  {video ? (video.fileName ?? video.uri.split('/').pop()) : 'Choose video file *'}
                 </Text>
                 <Text style={{ color: theme.onSurfaceVariant, fontSize: 11, marginTop: 2 }}>
                   {video ? 'Tap to replace file' : 'MP4, MOV · up to 200 MB'}
@@ -1716,13 +1908,117 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
               <MaterialIcons name="chevron-right" size={18} color={theme.onSurfaceVariant} />
             </Pressable>
 
+            {/* Live Reel Cover Picture Preview & Selection */}
+            <View style={{ marginTop: 14 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[uploadStyles.label, { color: theme.onSurfaceVariant, marginBottom: 0 }]}>
+                  Reel Cover Picture *
+                </Text>
+                <TouchableOpacity onPress={pickCoverImage} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <MaterialIcons name="photo-library" size={14} color={theme.primary} />
+                  <Text style={{ color: theme.primary, fontSize: 11.5, fontWeight: '700' }}>
+                    {coverAsset ? 'Change Custom' : 'Upload Custom Photo'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Cover Preview Card */}
+              <View style={[uploadStyles.coverPreviewCard, { borderColor: theme.outlineVariant }]}>
+                <Image
+                  source={{ uri: currentCoverUri }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                />
+                <LinearGradient
+                  colors={['rgba(0,0,0,0.25)', 'rgba(0,0,0,0.8)']}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={uploadStyles.coverPreviewBadge}>
+                  <MaterialIcons name="person" size={12} color="#000" />
+                  <Text style={{ color: '#000', fontSize: 10, fontWeight: '800' }}>
+                    {authorName.trim() || user?.fullName || 'CREATOR'}
+                  </Text>
+                </View>
+
+                <View style={uploadStyles.coverPreviewBottom}>
+                  <Text style={uploadStyles.coverPreviewTitle} numberOfLines={1}>
+                    {title.trim() || 'Property Reel Preview'}
+                  </Text>
+                  <Text style={uploadStyles.coverPreviewSubtitle} numberOfLines={1}>
+                    {location.trim() || 'Location'} · {authorName.trim() || user?.fullName || 'Boolok Member'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Architectural Presets */}
+              <Text style={{ color: theme.onSurfaceVariant, fontSize: 11, marginTop: 8, marginBottom: 6 }}>
+                Or tap a distinct architectural cover:
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {PROPERTY_COVER_PRESETS.map((preset) => {
+                  const isSelected = !coverAsset && selectedPresetUrl === preset.url;
+                  return (
+                    <TouchableOpacity
+                      key={preset.id}
+                      onPress={() => {
+                        setCoverAsset(null);
+                        setSelectedPresetUrl(preset.url);
+                      }}
+                      activeOpacity={0.8}
+                      style={[
+                        uploadStyles.presetChip,
+                        {
+                          borderColor: isSelected ? theme.primary : theme.outlineVariant,
+                          backgroundColor: isSelected ? 'rgba(249, 192, 61, 0.15)' : 'transparent',
+                        },
+                      ]}
+                    >
+                      <Image source={{ uri: preset.url }} style={uploadStyles.presetMiniImg} />
+                      <Text
+                        style={{
+                          color: isSelected ? theme.primary : theme.onSurface,
+                          fontSize: 11.5,
+                          fontWeight: isSelected ? '700' : '500',
+                          marginLeft: 6,
+                        }}
+                      >
+                        {preset.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* Creator / Broker Name Input */}
+            <View style={{ marginTop: 14 }}>
+              <Text style={[uploadStyles.label, { color: theme.onSurfaceVariant }]}>
+                Creator / Broker Name *
+              </Text>
+              <TextInput
+                value={authorName}
+                onChangeText={setAuthorName}
+                placeholder="Your full name or brokerage name"
+                placeholderTextColor={theme.onSurfaceVariant}
+                style={[
+                  uploadStyles.input,
+                  {
+                    color: theme.onSurface,
+                    borderColor: theme.outlineVariant,
+                    backgroundColor: isDark ? theme.surfaceContainerLow : theme.surfaceContainerLowest,
+                  },
+                ]}
+              />
+            </View>
+
+            {/* Title & Location Inputs */}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
               <View style={{ flex: 3 }}>
-                <Text style={[uploadStyles.label, { color: theme.onSurfaceVariant }]}>Title *</Text>
+                <Text style={[uploadStyles.label, { color: theme.onSurfaceVariant }]}>Property Name / Title *</Text>
                 <TextInput
                   value={title}
                   onChangeText={setTitle}
-                  placeholder="Property name"
+                  placeholder="e.g. Modern Sunset Penthouse"
                   placeholderTextColor={theme.onSurfaceVariant}
                   style={[
                     uploadStyles.input,
@@ -1753,16 +2049,21 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
               </View>
             </View>
 
-            <View style={{ marginTop: 10, marginBottom: 16 }}>
-              <Text style={[uploadStyles.label, { color: theme.onSurfaceVariant }]}>Caption / Insights</Text>
+            {/* Caption & Insights */}
+            <View style={{ marginTop: 12, marginBottom: 16 }}>
+              <Text style={[uploadStyles.label, { color: theme.onSurfaceVariant }]}>Caption / Property Insights</Text>
               <TextInput
                 value={caption}
                 onChangeText={setCaption}
-                placeholder="Market metrics, zoning, ROI data…"
+                placeholder="Market metrics, zoning, expected ROI, key architectural details…"
                 placeholderTextColor={theme.onSurfaceVariant}
+                multiline
+                numberOfLines={3}
                 style={[
                   uploadStyles.input,
                   {
+                    minHeight: 64,
+                    textAlignVertical: 'top',
                     color: theme.onSurface,
                     borderColor: theme.outlineVariant,
                     backgroundColor: isDark ? theme.surfaceContainerLow : theme.surfaceContainerLowest,
@@ -1771,7 +2072,7 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
               />
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
               <Pressable
                 onPress={onClose}
                 disabled={uploading}
@@ -1791,9 +2092,9 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
                 )}
               </Pressable>
             </View>
-          </Pressable>
+          </ScrollView>
         </Animated.View>
-      </Pressable>
+      </View>
     </Modal>
   );
 }
@@ -1801,13 +2102,25 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark }: any) {
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function InsightsScreen() {
   const { theme, isDark } = useTheme();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const isMobile = width < 768; // Standard responsive breakpoint
   const initialMobileHeight = Math.max(300, height - ((isMobile ? 64 : 80) + insets.top));
   const [listHeight, setListHeight] = useState(initialMobileHeight);
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
-  const [videos, setVideos] = useState<any[]>(DUMMY_VIDEOS);
+
+  // Initialize with local uploaded reels if any, followed by default videos
+  const [videos, setVideos] = useState<any[]>(() => {
+    const local = getLocalUploadedReels();
+    if (local && local.length > 0) {
+      const seen = new Set(local.map((r: any) => r._id));
+      const demoRemaining = DUMMY_VIDEOS.filter((d) => !seen.has(d._id));
+      return [...local, ...demoRemaining];
+    }
+    return DUMMY_VIDEOS;
+  });
+
   const [showUpload, setShowUpload] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
@@ -1843,37 +2156,60 @@ export default function InsightsScreen() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
+      const localReels = getLocalUploadedReels();
+
       if (response.data && response.data.length > 0) {
         const dbReels = response.data.map((r: any) => ({
           _id: r._id,
           title: r.title || r.caption || 'Untitled',
           location: r.location || '',
+          authorName: r.authorName || r.author?.fullName || '',
+          caption: r.caption || '',
           aiMatch: r.aiMatch ?? 95,
           insight: r.insight || r.caption || '',
           likes: r.likesCount ?? (Array.isArray(r.likes) ? r.likes.length : 0),
           likesCount: r.likesCount ?? (Array.isArray(r.likes) ? r.likes.length : 0),
           isLiked: Boolean(r.isLiked),
           comments: Array.isArray(r.comments) ? r.comments : [],
-          author: r.author || {
-            _id: 'sai',
-            fullName: 'Sai Vimenthan',
-            username: 'saivimenthan',
-            profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocK0o5SZUMa-JTOuTUTxS6t1Bl20HPwVkbFAz98dCG6e1rbpGA=s96-c',
+          commentsCount: Array.isArray(r.comments) ? r.comments.length : 0,
+          author: {
+            _id: r.author?._id || 'sai',
+            fullName: r.authorName || r.author?.fullName || 'Sai Vimenthan',
+            username: r.author?.username || 'saivimenthan',
+            profilePicture: r.author?.profilePicture || 'https://lh3.googleusercontent.com/a/ACg8ocK0o5SZUMa-JTOuTUTxS6t1Bl20HPwVkbFAz98dCG6e1rbpGA=s96-c',
             isVerified: true,
           },
-          poster:
-            r.poster ||
-            r.thumbnail ||
-            DEFAULT_POSTERS[r.title] ||
-            'https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=1200',
+          poster: r.poster || r.thumbnail || resolveCoverUrl(r),
+          thumbnail: r.thumbnail || r.poster || resolveCoverUrl(r),
           videoUrl: r.videoUrl.startsWith('http')
             ? r.videoUrl
             : `${API_BASE_URL}${r.videoUrl}`,
           music: 'Boolok AI · Market Verification Audio',
+          createdAt: r.createdAt,
         }));
 
-        // Set real reels directly from database without hardcoded dummy additions
-        setVideos(dbReels);
+        const combined = [...localReels, ...dbReels];
+        const seen = new Set();
+        const unique: any[] = [];
+        combined.forEach((item) => {
+          if (!seen.has(item._id)) {
+            seen.add(item._id);
+            unique.push(item);
+          }
+        });
+
+        DUMMY_VIDEOS.forEach((demo) => {
+          if (!seen.has(demo._id)) {
+            seen.add(demo._id);
+            unique.push(demo);
+          }
+        });
+
+        setVideos(unique);
+      } else if (localReels.length > 0) {
+        const seen = new Set(localReels.map((r: any) => r._id));
+        const demoRemaining = DUMMY_VIDEOS.filter((d) => !seen.has(d._id));
+        setVideos([...localReels, ...demoRemaining]);
       }
 
       // Sync following set directly from MongoDB database
@@ -1902,37 +2238,68 @@ export default function InsightsScreen() {
         } catch (_) {}
       }
     } catch (err) {
-      console.warn('Could not load reels from server, using demo data.');
+      console.warn('Could not load reels from server, using demo/local data.');
     }
   };
 
   const handleUploaded = (newReel: any) => {
+    const chosenPoster = newReel.poster || newReel.thumbnail || resolveCoverUrl(newReel);
+    const authorDisplayName = newReel.authorName || newReel.author?.fullName || user?.fullName || 'You';
     const mapped = {
-      _id: newReel._id,
-      title: newReel.title || 'Untitled',
-      location: newReel.location || '',
+      _id: newReel._id || `reel-${Date.now()}`,
+      title: newReel.title || 'Untitled Property Reel',
+      location: newReel.location || 'Verified Property',
+      authorName: authorDisplayName,
+      caption: newReel.caption || '',
       aiMatch: newReel.aiMatch ?? 96,
-      insight: newReel.insight || newReel.caption || '',
+      insight: newReel.insight || newReel.caption || 'Verified high-yield architectural listing.',
       likes: newReel.likesCount ?? 0,
+      likesCount: newReel.likesCount ?? 0,
       isLiked: false,
-      comments: [],
-      author: newReel.author || {
-        _id: 'you',
-        fullName: 'You',
-        username: 'you',
-        profilePicture: null,
+      comments: Array.isArray(newReel.comments) ? newReel.comments : [],
+      commentsCount: Array.isArray(newReel.comments) ? newReel.comments.length : 0,
+      author: {
+        _id: user?.id || user?._id || 'you',
+        fullName: authorDisplayName,
+        username: user?.username || 'you',
+        profilePicture: user?.profilePicture || null,
+        isVerified: true,
       },
+      poster: chosenPoster,
+      thumbnail: chosenPoster,
       videoUrl: newReel.videoUrl?.startsWith('http')
         ? newReel.videoUrl
         : `${API_BASE_URL}${newReel.videoUrl}`,
       music: 'Boolok AI · User Uploaded Property Radar',
+      createdAt: newReel.createdAt || new Date().toISOString(),
     };
-    setVideos((prev) => [mapped, ...prev]);
+
+    saveLocalUploadedReel(mapped);
+
+    // Immediately put the uploaded reel at index 0 on the main page
+    setVideos((prev) => [mapped, ...prev.filter((v) => v._id !== mapped._id)]);
+    setActiveVideoIndex(0);
+
+    // Scroll to the uploaded reel instantly so the user sees it on the main page
+    setTimeout(() => {
+      try {
+        flatListRef.current?.scrollToIndex({ index: 0, animated: true });
+      } catch (_) {
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      }
+    }, 120);
   };
 
   const handleDelete = async (reelId: string) => {
     // 1. Immediately remove from local state so UI updates with zero delay
     setVideos((prev) => prev.filter((v) => v._id !== reelId && v.id !== reelId));
+
+    try {
+      if (Platform.OS === 'web') {
+        const local = getLocalUploadedReels().filter((r: any) => r._id !== reelId && r.id !== reelId);
+        localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify(local));
+      }
+    } catch (_) {}
 
     try {
       const token = Platform.OS === 'web'
@@ -1954,17 +2321,27 @@ export default function InsightsScreen() {
     if (activeVideoIndex < videos.length - 1) {
       const nextIdx = activeVideoIndex + 1;
       setActiveVideoIndex(nextIdx);
-      flatListRef.current?.scrollToIndex({ index: nextIdx, animated: true });
+      try {
+        flatListRef.current?.scrollToIndex({ index: nextIdx, animated: true });
+      } catch (_) {
+        const itemH = cardHeight + 36;
+        flatListRef.current?.scrollToOffset({ offset: nextIdx * itemH, animated: true });
+      }
     }
-  }, [activeVideoIndex, videos.length]);
+  }, [activeVideoIndex, videos.length, cardHeight]);
 
   const scrollToPrev = useCallback(() => {
     if (activeVideoIndex > 0) {
       const prevIdx = activeVideoIndex - 1;
       setActiveVideoIndex(prevIdx);
-      flatListRef.current?.scrollToIndex({ index: prevIdx, animated: true });
+      try {
+        flatListRef.current?.scrollToIndex({ index: prevIdx, animated: true });
+      } catch (_) {
+        const itemH = cardHeight + 36;
+        flatListRef.current?.scrollToOffset({ offset: prevIdx * itemH, animated: true });
+      }
     }
-  }, [activeVideoIndex]);
+  }, [activeVideoIndex, cardHeight]);
 
   // Desktop keyboard & mouse wheel navigation on Web
   useEffect(() => {
@@ -1972,6 +2349,11 @@ export default function InsightsScreen() {
 
     let isWheelThrottled = false;
     const handleWheel = (e: WheelEvent) => {
+      // Never intercept wheel events if the user is on any other screen
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('insights')) {
+        return;
+      }
+
       // Don't intercept if inside comments, search, or inputs
       const target = e.target as HTMLElement | null;
       if (target?.closest?.('input, textarea, [data-scrollable="true"]')) return;
@@ -1993,6 +2375,10 @@ export default function InsightsScreen() {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (typeof window !== 'undefined' && !window.location.pathname.includes('insights')) {
+        return;
+      }
+
       // Ignore when user is typing in an input
       if (
         e.target instanceof HTMLInputElement ||
@@ -2197,6 +2583,7 @@ export default function InsightsScreen() {
         onUploaded={handleUploaded}
         theme={theme}
         isDark={isDark}
+        user={user}
       />
     </Animated.View>
   );
@@ -2916,6 +3303,15 @@ const uploadStyles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    position: 'relative',
+  },
+  backdropFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
   sheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -2970,5 +3366,57 @@ const uploadStyles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  coverPreviewCard: {
+    height: 120,
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    borderWidth: 1,
+    justifyContent: 'space-between',
+    padding: 10,
+    marginTop: 4,
+  },
+  coverPreviewBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f9c03d',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  coverPreviewBottom: {
+    width: '100%',
+  },
+  coverPreviewTitle: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  coverPreviewSubtitle: {
+    color: '#cbd5e1',
+    fontSize: 11,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  presetChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  presetMiniImg: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
   },
 });

@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet, useWindowDimensions, Image, Platform, ScrollView, TextInput, Alert, ActivityIndicator, Keyboard, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, router, usePathname, Redirect, useGlobalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, SlideInLeft } from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming, runOnJS, Easing } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import * as SecureStore from 'expo-secure-store';
@@ -14,6 +14,8 @@ import BoolokLogo from '../../components/BoolokLogo';
 import axios from 'axios';
 import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
 import { SocketProvider, useSocket } from '../../context/SocketContext';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const MD_BREAKPOINT = 768;
 
@@ -39,7 +41,49 @@ function AppLayoutContent() {
 
   // Track keyboard visibility so BottomNav doesn't obstruct inputs or sit above keyboard
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
+  // Smooth mobile drawer animation state
+  const DRAWER_WIDTH = Math.min(width * 0.82, 320);
+  const drawerTranslateX = useSharedValue(-320);
+  const backdropOpacity = useSharedValue(0);
+  const [drawerMounted, setDrawerMounted] = useState(false);
+
+  const openMobileDrawer = useCallback(() => {
+    setDrawerMounted(true);
+    drawerTranslateX.value = -DRAWER_WIDTH;
+    backdropOpacity.value = 0;
+    drawerTranslateX.value = withTiming(0, {
+      duration: 250,
+      easing: Easing.out(Easing.cubic),
+    });
+    backdropOpacity.value = withTiming(1, { duration: 250 });
+  }, [DRAWER_WIDTH]);
+
+  const closeMobileDrawer = useCallback(
+    (onClosed?: () => void) => {
+      backdropOpacity.value = withTiming(0, { duration: 200 });
+      drawerTranslateX.value = withTiming(
+        -DRAWER_WIDTH,
+        { duration: 200, easing: Easing.in(Easing.cubic) },
+        (finished) => {
+          if (finished) {
+            runOnJS(setDrawerMounted)(false);
+            if (onClosed) {
+              runOnJS(onClosed)();
+            }
+          }
+        }
+      );
+    },
+    [DRAWER_WIDTH]
+  );
+
+  const animatedDrawerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: drawerTranslateX.value }],
+  }));
+
+  const animatedBackdropStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }));
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -546,38 +590,38 @@ function AppLayoutContent() {
   ];
 
   const MobileSideDrawer = () => {
-    if (!isMobileDrawerOpen || isWide) return null;
+    if (!drawerMounted || isWide) return null;
 
     const drawerBg = isDark ? '#080e1a' : '#FFFFFF';
     const cardBg = isDark ? '#0f1a2e' : '#F1F5F9';
     const borderColor = isDark ? '#1a273c' : '#E2E8F0';
 
     const handleNavigate = (route: string) => {
-      setIsMobileDrawerOpen(false);
-      setTimeout(() => {
+      closeMobileDrawer(() => {
         router.push(route as any);
-      }, 50);
+      });
     };
 
     return (
       <Modal
-        visible={isMobileDrawerOpen}
+        visible={drawerMounted && !isWide}
         transparent={true}
-        animationType="fade"
-        onRequestClose={() => setIsMobileDrawerOpen(false)}
+        animationType="none"
+        statusBarTranslucent={true}
+        onRequestClose={() => closeMobileDrawer()}
       >
         <View style={mobileDrawerStyles.modalOverlay}>
-          {/* Backdrop */}
-          <Pressable
-            style={mobileDrawerStyles.backdrop}
-            onPress={() => setIsMobileDrawerOpen(false)}
+          {/* Backdrop with animated opacity */}
+          <AnimatedPressable
+            style={[mobileDrawerStyles.backdrop, animatedBackdropStyle]}
+            onPress={() => closeMobileDrawer()}
           />
 
-          {/* Drawer Body (Sliding Container) */}
+          {/* Drawer Body (Sliding Container driven by UI-thread Reanimated) */}
           <Animated.View
-            entering={SlideInLeft.duration(260)}
             style={[
               mobileDrawerStyles.drawerContainer,
+              animatedDrawerStyle,
               {
                 backgroundColor: drawerBg,
                 paddingTop: Math.max(insets.top, 16),
@@ -599,7 +643,7 @@ function AppLayoutContent() {
               </View>
 
               <Pressable
-                onPress={() => setIsMobileDrawerOpen(false)}
+                onPress={() => closeMobileDrawer()}
                 style={({ pressed }: any) => [
                   mobileDrawerStyles.closeBtn,
                   { backgroundColor: cardBg, borderColor },
@@ -750,8 +794,9 @@ function AppLayoutContent() {
 
               <Pressable
                 onPress={() => {
-                  setIsMobileDrawerOpen(false);
-                  handleLogout();
+                  closeMobileDrawer(() => {
+                    handleLogout();
+                  });
                 }}
                 style={[mobileDrawerStyles.footerActionBtn, { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.1)' : '#FEE2E2', borderColor: 'rgba(239, 68, 68, 0.3)' }]}
               >
@@ -809,7 +854,7 @@ function AppLayoutContent() {
           ) : !isMobileSearchActive ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 1, marginRight: 8 }}>
               <Pressable
-                onPress={() => setIsMobileDrawerOpen(true)}
+                onPress={openMobileDrawer}
                 style={({ pressed }: any) => [
                   { padding: 6, marginRight: 4, borderRadius: 8 },
                   pressed && { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)' }
@@ -1196,7 +1241,7 @@ function AppLayoutContent() {
                   paddingBottom: (!isWide && !shouldHideBottomNav) ? (56 + Math.max(insets.bottom, 10)) : 0,
                 }
               ]}>
-                <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: isDark ? '#060B13' : '#F8FAFC' } }} />
+                <Stack screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: isDark ? '#060B13' : '#F8FAFC', flex: 1, height: '100%' } }} />
               </View>
 
               {!isWide && !shouldHideBottomNav && <BottomNav />}
@@ -1220,7 +1265,31 @@ export default function AppLayout() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    height: '100%',
+    width: '100%',
     flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  mainContent: {
+    flex: 1,
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  slotContainer: {
+    flex: 1,
+    height: '100%',
+    width: '100%',
+    minWidth: 0,
+    minHeight: 0,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    ...Platform.select({ web: { transition: 'background-color 0.3s ease' } as any }),
   },
   // Fixed 80px placeholder — keeps the layout slot but never changes size
   sidebarWrapper: {
@@ -1285,10 +1354,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     ...Platform.select({ web: { transition: 'opacity 0.2s ease' } as any }),
-  },
-  mainContent: {
-    flex: 1,
-    flexDirection: 'column',
   },
   header: {
     height: 80,
@@ -1391,10 +1456,6 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(218, 165, 32, 0.3)',
   },
-  slotContainer: {
-    flex: 1,
-    ...Platform.select({ web: { transition: 'background-color 0.3s ease' } as any }),
-  }
 });
 
 const mobileDrawerStyles = StyleSheet.create({

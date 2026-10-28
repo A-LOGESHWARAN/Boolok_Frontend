@@ -28,12 +28,12 @@ function RootLayoutNav() {
   }, [isDark]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, height: '100%', width: '100%' }}>
       <Stack
         screenOptions={{
           headerShown: false,
           animation: 'fade',
-          contentStyle: { backgroundColor: isDark ? '#060b13' : '#ffffff' },
+          contentStyle: { backgroundColor: isDark ? '#060b13' : '#ffffff', flex: 1, height: '100%' },
         }}
       >
         {/* Public routes: never wrapped by the authenticated app layout */}

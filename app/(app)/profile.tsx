@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import BoolokLogo from '../../components/BoolokLogo';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
+import { formatSmartDateTime } from '../../lib/dateTime';
 
 // ── Shared follow tracker ───────────────────────────────────────────────────
 const GLOBAL_FOLLOWED_USERS = new Set<string>();
@@ -728,15 +729,76 @@ function resolveMemberProfile(targetId: string, viewer: any) {
 const ProfileReelItem = ({ reel }: { reel: any }) => {
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
+  const { user } = useAuth();
   const [isPlaying, setIsPlaying] = useState(false);
-  const [likesCount, setLikesCount] = useState<number>(reel.likes?.length ?? reel.likes ?? 100);
-  const [hasLiked, setHasLiked] = useState(false);
-  const [comments, setComments] = useState<any[]>(reel.comments || [
-    { _id: 'c1', user: { fullName: 'Logeshwaran A' }, text: 'Incredible property location and zoning potential! 🏢✨', createdAt: new Date() },
-    { _id: 'c2', user: { fullName: 'Bavadharini RS' }, text: 'The architectural design and layout looks world class. 🌿', createdAt: new Date() },
-  ]);
+
+  const initialLikes = (() => {
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem('boolok_post_likes');
+        if (raw) {
+          const cache = JSON.parse(raw);
+          if (cache[reel._id] && typeof cache[reel._id].count === 'number') {
+            return cache[reel._id].count;
+          }
+        }
+      } catch (_) {}
+    }
+    return reel.likesCount ?? (Array.isArray(reel.likes) ? reel.likes.length : (typeof reel.likes === 'number' ? reel.likes : 0));
+  })();
+
+  const [likesCount, setLikesCount] = useState<number>(initialLikes);
+  const [hasLiked, setHasLiked] = useState<boolean>(() => {
+    if (Boolean(reel.isLiked)) return true;
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem('boolok_post_likes');
+        if (raw) {
+          const cache = JSON.parse(raw);
+          if (cache[reel._id] && typeof cache[reel._id].likedByMe === 'boolean') {
+            return cache[reel._id].likedByMe;
+          }
+        }
+        const raw2 = localStorage.getItem('boolok_liked_reels_set');
+        if (raw2) {
+          const set = JSON.parse(raw2);
+          return Boolean(set[reel._id]);
+        }
+      } catch (_) {}
+    }
+    return false;
+  });
+
+  const [comments, setComments] = useState<any[]>(() => {
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem(`boolok_comments_${reel._id}`);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (Array.isArray(cached) && cached.length > 0) return cached;
+        }
+      } catch (_) {}
+    }
+    return Array.isArray(reel.comments) ? reel.comments : [];
+  });
   const [showComments, setShowComments] = useState(false);
   const [commentInput, setCommentInput] = useState('');
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem(`boolok_comments_${reel._id}`);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (Array.isArray(cached) && cached.length > 0) {
+            setComments(cached);
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+    setComments(Array.isArray(reel.comments) ? reel.comments : []);
+  }, [reel._id, reel.comments]);
 
   const videoSource = reel.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
   const videoRef = useRef<any>(null);
@@ -780,26 +842,120 @@ const ProfileReelItem = ({ reel }: { reel: any }) => {
     }
   };
 
-  const handleLike = () => {
-    if (hasLiked) {
-      setHasLiked(false);
-      setLikesCount((prev) => Math.max(0, prev - 1));
-    } else {
-      setHasLiked(true);
-      setLikesCount((prev) => prev + 1);
-    }
+  const handleLike = async () => {
+    const nextState = !hasLiked;
+    const nextCount = nextState ? likesCount + 1 : Math.max(0, likesCount - 1);
+    setHasLiked(nextState);
+    setLikesCount(nextCount);
+
+    try {
+      if (Platform.OS === 'web') {
+        const pRaw = localStorage.getItem('boolok_post_likes');
+        const pCache = pRaw ? JSON.parse(pRaw) : {};
+        pCache[reel._id] = { count: nextCount, likedByMe: nextState };
+        localStorage.setItem('boolok_post_likes', JSON.stringify(pCache));
+
+        const lRaw = localStorage.getItem('boolok_liked_reels_set');
+        const lSet = lRaw ? JSON.parse(lRaw) : {};
+        if (nextState) lSet[reel._id] = true; else delete lSet[reel._id];
+        localStorage.setItem('boolok_liked_reels_set', JSON.stringify(lSet));
+
+        const rawList = localStorage.getItem('boolok_user_uploaded_reels');
+        if (rawList) {
+          const list = JSON.parse(rawList);
+          const idx = list.findIndex((r: any) => r._id === reel._id || r.id === reel._id);
+          if (idx !== -1) {
+            list[idx].likes = nextCount;
+            list[idx].likesCount = nextCount;
+            list[idx].isLiked = nextState;
+            localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify(list));
+          }
+        }
+      } else {
+        const pRaw = await SecureStore.getItemAsync('boolok_post_likes');
+        const pCache = pRaw ? JSON.parse(pRaw) : {};
+        pCache[reel._id] = { count: nextCount, likedByMe: nextState };
+        await SecureStore.setItemAsync('boolok_post_likes', JSON.stringify(pCache));
+      }
+    } catch (_) {}
+
+    try {
+      const token = Platform.OS === 'web'
+        ? localStorage.getItem('userToken')
+        : await SecureStore.getItemAsync('userToken');
+
+      if (token && reel._id && !['1', '2', '3', '4'].includes(reel._id)) {
+        await axios.put(
+          `${API_BASE_URL}/api/reels/${reel._id}/like`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+    } catch (_) {}
   };
 
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
     if (!commentInput.trim()) return;
-    const newC = {
-      _id: Date.now().toString(),
-      user: { fullName: 'You' },
-      text: commentInput.trim(),
-      createdAt: new Date(),
-    };
-    setComments((prev) => [...prev, newC]);
+    const text = commentInput.trim();
     setCommentInput('');
+
+    const newC = {
+      _id: `comment_${Date.now()}`,
+      user: {
+        fullName: user?.fullName || 'You',
+        username: user?.username || 'member',
+        profilePicture: user?.profilePicture || null,
+      },
+      author: {
+        fullName: user?.fullName || 'You',
+        username: user?.username || 'member',
+        profilePicture: user?.profilePicture || null,
+      },
+      text,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = [...comments, newC];
+    setComments(updated);
+
+    try {
+      if (Platform.OS === 'web') {
+        localStorage.setItem(`boolok_comments_${reel._id}`, JSON.stringify(updated));
+
+        const rawList = localStorage.getItem('boolok_user_uploaded_reels');
+        if (rawList) {
+          const list = JSON.parse(rawList);
+          const idx = list.findIndex((r: any) => r._id === reel._id || r.id === reel._id);
+          if (idx !== -1) {
+            list[idx].comments = updated;
+            list[idx].commentsCount = updated.length;
+            localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify(list));
+          }
+        }
+      } else {
+        await SecureStore.setItemAsync(`boolok_comments_${reel._id}`, JSON.stringify(updated));
+      }
+    } catch (_) {}
+
+    try {
+      const token = Platform.OS === 'web'
+        ? localStorage.getItem('userToken')
+        : await SecureStore.getItemAsync('userToken');
+
+      if (token && reel._id && !['1', '2', '3', '4'].includes(reel._id)) {
+        const res = await axios.post(
+          `${API_BASE_URL}/api/reels/${reel._id}/comments`,
+          { text },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (res.data && Array.isArray(res.data.comments)) {
+          setComments(res.data.comments);
+          if (Platform.OS === 'web') {
+            localStorage.setItem(`boolok_comments_${reel._id}`, JSON.stringify(res.data.comments));
+          }
+        }
+      }
+    } catch (_) {}
   };
 
   return (
@@ -854,10 +1010,21 @@ const ProfileReelItem = ({ reel }: { reel: any }) => {
         )}
       </Pressable>
 
-      {/* ── Top Overlay: AI Match Score ── */}
-      <View style={styles.reelMatchBadge} pointerEvents="none">
-        <View style={styles.reelMatchDot} />
-        <Text style={styles.reelMatchText}>{reel.aiMatch || 95}% AI MATCH</Text>
+      {/* ── Top Overlay: AI Match Score & Watch in Reels ── */}
+      <View style={{ position: 'absolute', top: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }} pointerEvents="box-none">
+        <View style={styles.reelMatchBadge} pointerEvents="none">
+          <View style={styles.reelMatchDot} />
+          <Text style={styles.reelMatchText}>{reel.aiMatch || 95}% AI MATCH</Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => router.push('/(app)/insights')}
+          activeOpacity={0.8}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.65)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1, borderColor: '#daa520' }}
+        >
+          <MaterialIcons name="ondemand-video" size={13} color="#daa520" />
+          <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>Reels Page</Text>
+        </TouchableOpacity>
       </View>
 
       {/* ── Right Action Sidebar (Like, Comment, Share) ── */}
@@ -963,7 +1130,12 @@ const ProfileReelItem = ({ reel }: { reel: any }) => {
                       size={34}
                     />
                     <View style={styles.commentBubble}>
-                      <Text style={styles.commentAuthorName}>{authorName}</Text>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                        <Text style={styles.commentAuthorName}>{authorName}</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 10, marginLeft: 8 }}>
+                          {formatSmartDateTime(c.createdAt || c.time)}
+                        </Text>
+                      </View>
                       <Text style={styles.commentContentText}>{c.text}</Text>
                     </View>
                   </View>
@@ -1091,8 +1263,31 @@ export default function ProfessionalUserProfileScreen() {
   const [attachedVideo, setAttachedVideo] = useState<string | null>(null);
   const [isPublishingReel, setIsPublishingReel] = useState(false);
 
-  // User's own reels with 5-10s sample house walkthroughs (front view, back view, luxury villa)
-  const [userReels, setUserReels] = useState<any[]>(SAI_REELS);
+  // User's own reels
+  const [userReels, setUserReels] = useState<any[]>([]);
+  const [localReels, setLocalReels] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem('boolok_user_uploaded_reels');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setLocalReels(parsed);
+        }
+      } catch (_) {}
+    } else {
+      (async () => {
+        try {
+          const raw = await SecureStore.getItemAsync('boolok_user_uploaded_reels');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) setLocalReels(parsed);
+          }
+        } catch (_) {}
+      })();
+    }
+  }, []);
 
   const defaultFallbackUser = {
     id: viewer?.id || viewer?._id || 'self',
@@ -1208,13 +1403,28 @@ export default function ProfessionalUserProfileScreen() {
 
   const handleOpenPostDetailsModal = async (post: any) => {
     setSelectedPostDetails(post);
-    const count = post.likesCount !== undefined ? post.likesCount : (Array.isArray(post.likes) ? post.likes.length : 0);
-    setPostDetailsLikesCount(count);
+
+    let count = post.likesCount !== undefined ? post.likesCount : (Array.isArray(post.likes) ? post.likes.length : 0);
     const viewerIdStr = String(viewer?.id || viewer?._id || '');
-    const isLiked = Array.isArray(post.likes) && post.likes.some((l: any) => {
+    let isLiked = Array.isArray(post.likes) && post.likes.some((l: any) => {
       const id = typeof l === 'string' ? l : (l?._id || l?.id || '');
       return id === viewerIdStr || (viewer?.username && id === viewer.username);
     });
+
+    if (Platform.OS === 'web') {
+      try {
+        const raw = localStorage.getItem('boolok_post_likes');
+        if (raw) {
+          const cache = JSON.parse(raw);
+          if (cache[post._id]) {
+            if (typeof cache[post._id].count === 'number') count = cache[post._id].count;
+            if (typeof cache[post._id].likedByMe === 'boolean') isLiked = cache[post._id].likedByMe;
+          }
+        }
+      } catch (_) {}
+    }
+
+    setPostDetailsLikesCount(count);
     setHasLikedPostDetails(Boolean(post.isLiked || isLiked));
     setPostDetailReaction(post.isLiked || isLiked ? 'like' : null);
     setActivePostDetailReactionPicker(false);
@@ -1254,9 +1464,40 @@ export default function ProfessionalUserProfileScreen() {
     setActivePostDetailReactionPicker(false);
     const isSame = postDetailReaction === reactionType;
     const nextReaction = isSame ? null : reactionType;
+    const nextLiked = Boolean(nextReaction);
+    const nextCount = isSame ? Math.max(0, postDetailsLikesCount - 1) : (!postDetailReaction ? postDetailsLikesCount + 1 : postDetailsLikesCount);
+
     setPostDetailReaction(nextReaction);
-    setHasLikedPostDetails(Boolean(nextReaction));
-    setPostDetailsLikesCount((prev) => (isSame ? Math.max(1, prev - 1) : (!postDetailReaction ? prev + 1 : prev)));
+    setHasLikedPostDetails(nextLiked);
+    setPostDetailsLikesCount(nextCount);
+
+    // Persist to shared boolok_post_likes cache
+    try {
+      if (Platform.OS === 'web') {
+        const pRaw = localStorage.getItem('boolok_post_likes');
+        const pCache = pRaw ? JSON.parse(pRaw) : {};
+        pCache[selectedPostDetails._id] = { count: nextCount, likedByMe: nextLiked };
+        localStorage.setItem('boolok_post_likes', JSON.stringify(pCache));
+      } else {
+        const pRaw = await SecureStore.getItemAsync('boolok_post_likes');
+        const pCache = pRaw ? JSON.parse(pRaw) : {};
+        pCache[selectedPostDetails._id] = { count: nextCount, likedByMe: nextLiked };
+        await SecureStore.setItemAsync('boolok_post_likes', JSON.stringify(pCache));
+      }
+    } catch (_) {}
+
+    // Update parent posts list immediately
+    setData((prev: any) => {
+      if (!prev || !Array.isArray(prev.posts)) return prev;
+      return {
+        ...prev,
+        posts: prev.posts.map((p: any) =>
+          p._id === selectedPostDetails._id
+            ? { ...p, likesCount: nextCount, isLiked: nextLiked }
+            : p
+        ),
+      };
+    });
 
     try {
       const token = await getToken();
@@ -1300,10 +1541,28 @@ export default function ProfessionalUserProfileScreen() {
         profilePicture: viewer?.profilePicture || null,
       },
       text: commentToSend,
+      createdAt: new Date().toISOString(),
       time: 'Just now',
     };
 
     setPostDetailsComments((prev) => [newCommentObj, ...prev]);
+
+    // Update parent posts list comment count immediately
+    setData((prev: any) => {
+      if (!prev || !Array.isArray(prev.posts)) return prev;
+      return {
+        ...prev,
+        posts: prev.posts.map((p: any) =>
+          p._id === selectedPostDetails._id
+            ? {
+                ...p,
+                commentsCount: (p.commentsCount || (Array.isArray(p.comments) ? p.comments.length : 0)) + 1,
+                comments: [newCommentObj, ...(Array.isArray(p.comments) ? p.comments : [])],
+              }
+            : p
+        ),
+      };
+    });
 
     try {
       const token = await getToken();
@@ -1980,6 +2239,9 @@ export default function ProfessionalUserProfileScreen() {
       aiMatch: Math.floor(Math.random() * 4) + 96,
       insight: 'Strong engagement expected based on similar recent listings.',
       likes: 0,
+      likesCount: 0,
+      comments: [],
+      commentsCount: 0,
       videoUrl: reelUrl.trim() || attachedVideo || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
       thumbnail: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=1200',
     };
@@ -2134,17 +2396,33 @@ export default function ProfessionalUserProfileScreen() {
     closedDeals: calculatedClosedDeals,
   };
 
+  const serverReels = Array.isArray(data?.reels) ? data.reels : [];
+  const mergedSelfReels = (() => {
+    const combined = [...localReels, ...userReels, ...serverReels];
+    const seen = new Set();
+    const unique: any[] = [];
+    combined.forEach((r) => {
+      if (r && r._id && !seen.has(r._id)) {
+        seen.add(r._id);
+        unique.push(r);
+      }
+    });
+    return unique;
+  })();
+
   const reelsToDisplay = isSelf
-    ? (userReels.length > 0 ? userReels : SAI_REELS)
-    : (Array.isArray(data?.reels)
+    ? (mergedSelfReels.length > 0 ? mergedSelfReels : (Array.isArray(profileUser.reels) && profileUser.reels.length > 0 ? profileUser.reels : (fallbackUser.reels || [])))
+    : (Array.isArray(data?.reels) && data.reels.length > 0
       ? data.reels
-      : (Array.isArray(profileUser.reels) ? profileUser.reels : (fallbackUser.reels || [])));
+      : (Array.isArray(profileUser.reels) && profileUser.reels.length > 0 ? profileUser.reels : (fallbackUser.reels || [])));
 
   const postsToDisplay = isSelf
-    ? (Array.isArray(data?.posts) ? data.posts : (Array.isArray(profileUser.posts) ? profileUser.posts : []))
-    : (Array.isArray(data?.posts)
+    ? (Array.isArray(data?.posts) && data.posts.length > 0
         ? data.posts
-        : (Array.isArray(profileUser.posts) ? profileUser.posts : (fallbackUser.posts || [])));
+        : (Array.isArray(profileUser.posts) && profileUser.posts.length > 0 ? profileUser.posts : []))
+    : (Array.isArray(data?.posts) && data.posts.length > 0
+        ? data.posts
+        : (Array.isArray(profileUser.posts) && profileUser.posts.length > 0 ? profileUser.posts : (fallbackUser.posts || [])));
 
   const postCount = postsToDisplay.length;
   const reelCount = reelsToDisplay.length;
@@ -2883,7 +3161,20 @@ export default function ProfessionalUserProfileScreen() {
                   const authorId = post.author?._id || post.author?.id || (typeof post.author === 'string' ? post.author : '');
                   const viewerId = viewer?.id || viewer?._id || '';
                   const isPostOwner = isSelf || (authorId && (authorId === viewerId || (viewer?.username && authorId === viewer.username)));
-                  const postLikesCount = post.likesCount !== undefined ? post.likesCount : (Array.isArray(post.likes) ? post.likes.length : 0);
+                  const postLikesCount = (() => {
+                    if (Platform.OS === 'web') {
+                      try {
+                        const raw = localStorage.getItem('boolok_post_likes');
+                        if (raw) {
+                          const cache = JSON.parse(raw);
+                          if (cache[post._id] && typeof cache[post._id].count === 'number') {
+                            return cache[post._id].count;
+                          }
+                        }
+                      } catch (_) {}
+                    }
+                    return post.likesCount !== undefined ? post.likesCount : (Array.isArray(post.likes) ? post.likes.length : 0);
+                  })();
                   const postCommentsCount = post.commentsCount !== undefined ? post.commentsCount : (Array.isArray(post.comments) ? post.comments.length : 0);
                   const postDescription = post.content || post.description || post.title || 'Property Post';
 
@@ -3687,7 +3978,7 @@ export default function ProfessionalUserProfileScreen() {
                                 <Text style={{ color: goldPrimary, fontWeight: '800', fontSize: 13 }}>
                                   {cName}
                                 </Text>
-                                <Text style={{ color: '#64748b', fontSize: 10 }}>{c.time || 'Just now'}</Text>
+                                <Text style={{ color: '#64748b', fontSize: 10 }}>{formatSmartDateTime(c.createdAt || c.time)}</Text>
                               </View>
                               <Text style={{ color: '#e2e8f0', fontSize: 12.5, lineHeight: 17 }}>{c.text}</Text>
                             </View>

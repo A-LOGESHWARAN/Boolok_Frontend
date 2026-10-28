@@ -27,6 +27,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import BoolokLogo from '../../components/BoolokLogo';
 import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
+import { formatSmartDateTime } from '../../lib/dateTime';
 
 // ── Real Estate & Buildings For Sale News ───────────────────────────────────
 const DEFAULT_REAL_ESTATE_NEWS = [
@@ -1705,14 +1706,7 @@ export default function ProfessionalSocialFeedScreen() {
                           const cAuthor = c.author || c.user || {};
                           const cName = cAuthor.fullName || cAuthor.username || 'Boolok Member';
                           const commentBody = c.text || '';
-                          const commentTime =
-                            c.time ||
-                            (c.createdAt
-                              ? new Date(c.createdAt).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : 'Recently');
+                          const commentTime = formatSmartDateTime(c.createdAt || c.time);
                           const authorId = cAuthor._id || cAuthor.id || cAuthor.username;
 
                           return (

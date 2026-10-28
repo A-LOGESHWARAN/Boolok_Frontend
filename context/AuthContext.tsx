@@ -86,10 +86,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // Asynchronously synchronize fresh user profile directly from MongoDB database
           try {
-            const apiRes = await fetch(`${API_BASE_URL}/api/users/self`, {
+            const apiRes = await fetch(`${API_BASE_URL}/api/auth/me`, {
               headers: { Authorization: `Bearer ${storedToken}` },
             });
-            if (apiRes.status === 401) {
+            if (apiRes.status === 401 || apiRes.status === 403) {
               console.warn('[auth] Stored session token is expired or invalid. Clearing credentials.');
               await removeValue(TOKEN_KEY);
               await removeValue(USER_KEY);

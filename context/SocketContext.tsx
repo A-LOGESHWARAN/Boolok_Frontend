@@ -70,6 +70,14 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       setIsConnected(true);
     });
 
+    socketInstance.on('connect_error', (err: any) => {
+      console.warn('[socket] Connection error:', err?.message || err);
+      setIsConnected(false);
+      if (err?.message === 'Invalid token' || err?.message === 'Authentication token required') {
+        socketInstance.disconnect();
+      }
+    });
+
     socketInstance.on('disconnect', () => {
       setIsConnected(false);
     });
