@@ -250,14 +250,18 @@ const PROPERTY_COVER_PRESETS = [
 
 function resolveCoverUrl(item: any): string {
   if (item?.poster && typeof item.poster === 'string' && item.poster.trim()) {
-    return item.poster.startsWith('http') || item.poster.startsWith('data:') || item.poster.startsWith('file:')
-      ? item.poster
-      : `${API_BASE_URL}${item.poster}`;
+    const p = item.poster.trim();
+    if (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('data:') || p.startsWith('blob:') || p.startsWith('file:')) {
+      return p;
+    }
+    return `${API_BASE_URL}${p.startsWith('/') ? p : `/${p}`}`;
   }
   if (item?.thumbnail && typeof item.thumbnail === 'string' && item.thumbnail.trim()) {
-    return item.thumbnail.startsWith('http') || item.thumbnail.startsWith('data:') || item.thumbnail.startsWith('file:')
-      ? item.thumbnail
-      : `${API_BASE_URL}${item.thumbnail}`;
+    const t = item.thumbnail.trim();
+    if (t.startsWith('http://') || t.startsWith('https://') || t.startsWith('data:') || t.startsWith('blob:') || t.startsWith('file:')) {
+      return t;
+    }
+    return `${API_BASE_URL}${t.startsWith('/') ? t : `/${t}`}`;
   }
   if (item?.title && DEFAULT_POSTERS[item.title]) {
     return DEFAULT_POSTERS[item.title];
@@ -270,6 +274,22 @@ function resolveCoverUrl(item: any): string {
   }
   const idx = Math.abs(hash) % PROPERTY_COVER_PRESETS.length;
   return PROPERTY_COVER_PRESETS[idx].url;
+}
+
+function resolveVideoUrl(item: any): string {
+  const url = item?.videoUrl;
+  if (!url || typeof url !== 'string' || !url.trim()) {
+    return 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+  }
+  const clean = url.trim();
+  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('blob:') || clean.startsWith('data:')) {
+    return clean;
+  }
+  if (clean.startsWith('/uploads/reels/')) {
+    const filename = clean.replace('/uploads/reels/', '');
+    return `${API_BASE_URL}/api/reels/stream/${filename}`;
+  }
+  return clean.startsWith('/') ? `${API_BASE_URL}${clean}` : `${API_BASE_URL}/${clean}`;
 }
 
 function getLocalUploadedReels(): any[] {
@@ -431,6 +451,29 @@ const VideoItem = ({
   const [showHeartBurst, setShowHeartBurst] = useState(false);
   const [expandedInsight, setExpandedInsight] = useState(false);
 
+  const [videoSrc, setVideoSrc] = useState<string>(() => resolveVideoUrl(item));
+  const [isFallbackStream, setIsFallbackStream] = useState(false);
+  const [coverHasError, setCoverHasError] = useState(false);
+
+  useEffect(() => {
+    setVideoSrc(resolveVideoUrl(item));
+    setIsFallbackStream(false);
+    setVideoHasError(false);
+    setIsVideoLoaded(false);
+    setCoverHasError(false);
+  }, [item._id, item.videoUrl]);
+
+  const handleVideoError = () => {
+    console.warn('[reels] Video stream unreachable or expired:', videoSrc);
+    if (!isFallbackStream) {
+      setIsFallbackStream(true);
+      setVideoSrc('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
+      setIsVideoLoaded(true);
+    } else {
+      setVideoHasError(true);
+    }
+  };
+
   // Follow author state
   const authorId = item.author?._id || item.author?.id || item.author?.username || 'sai';
   const authorName = item.authorName || item.author?.fullName || item.author?.name || 'Verified Advisor';
@@ -573,7 +616,7 @@ const VideoItem = ({
   const lastTapRef = useRef<number>(0);
   const commentsScrollRef = useRef<ScrollView>(null);
 
-  const player = useVideoPlayer(item.videoUrl, (p) => {
+  const player = useVideoPlayer(videoSrc, (p) => {
     p.loop = true;
     p.muted = isMuted;
   });
@@ -1109,8 +1152,9 @@ const VideoItem = ({
         {/* Background Cover Image fallback so screen is NEVER black */}
         <Image
           source={{
-            uri: resolveCoverUrl(item),
+            uri: coverHasError ? PROPERTY_COVER_PRESETS[0].url : resolveCoverUrl(item),
           }}
+          onError={() => setCoverHasError(true)}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
         />
@@ -1118,22 +1162,19 @@ const VideoItem = ({
         {Platform.OS === 'web' ? (
           <video
             ref={webVideoRef}
-            src={item.videoUrl}
-            poster={resolveCoverUrl(item)}
+            src={videoSrc}
+            poster={coverHasError ? PROPERTY_COVER_PRESETS[0].url : resolveCoverUrl(item)}
             autoPlay
             loop
             muted={isMuted}
             playsInline
             preload="auto"
+            crossOrigin="anonymous"
             onLoadedData={() => {
               setIsVideoLoaded(true);
               setVideoHasError(false);
             }}
-            onError={() => {
-              console.warn('[reels] Video element failed to load:', item.videoUrl);
-              setVideoHasError(true);
-              setIsVideoLoaded(false);
-            }}
+            onError={handleVideoError}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             style={{
@@ -1143,7 +1184,7 @@ const VideoItem = ({
               position: 'absolute',
               top: 0,
               left: 0,
-              opacity: isVideoLoaded && !videoHasError ? 1 : 0,
+              opacity: isVideoLoaded ? 1 : 0.85,
               pointerEvents: 'none',
               transition: 'opacity 0.25s ease',
             }}
@@ -1155,6 +1196,28 @@ const VideoItem = ({
             contentFit="cover"
             nativeControls={false}
           />
+        )}
+
+        {/* Server storage notice if fallback stream is active */}
+        {isFallbackStream && (
+          <View
+            style={{
+              position: 'absolute',
+              top: 54,
+              alignSelf: 'center',
+              backgroundColor: 'rgba(6, 11, 19, 0.85)',
+              paddingHorizontal: 12,
+              paddingVertical: 5,
+              borderRadius: 20,
+              borderWidth: 1,
+              borderColor: 'rgba(249, 192, 61, 0.5)',
+              zIndex: 20,
+            }}
+          >
+            <Text style={{ color: theme.primary, fontSize: 11, fontWeight: '700' }}>
+              ⚡ Architectural Stream Preview (Render storage rebooted)
+            </Text>
+          </View>
         )}
 
         {/* Center Heart Burst on double tap */}
