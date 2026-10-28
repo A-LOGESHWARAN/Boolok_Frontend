@@ -33,196 +33,8 @@ import { useRouter } from 'expo-router';
 import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
 import { formatSmartDateTime } from '../../lib/dateTime';
 
-const DUMMY_VIDEOS = [
-  {
-    _id: '1',
-    title: 'Margaret River Vineyard',
-    location: 'Western Australia',
-    aiMatch: 98,
-    insight: 'Soil analysis indicates 92% suitability for premium Cabernet Sauvignon. Water rights pre-verified for 50 years with automated yield forecasts.',
-    likes: 0,
-    likesCount: 0,
-    poster: 'https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=1200',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    music: 'Boolok AI · Viticulture Advisory Track',
-    author: {
-      _id: 'sai',
-      fullName: 'Sai Vimenthan',
-      username: 'saivimenthan',
-      profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocK0o5SZUMa-JTOuTUTxS6t1Bl20HPwVkbFAz98dCG6e1rbpGA=s96-c',
-      isVerified: true,
-      headline: 'Principal Broker · Commercial Assets',
-    },
-    comments: [
-      {
-        _id: 'c1-1',
-        user: {
-          fullName: 'Shreekutti',
-          username: 'shreekutti',
-          profilePicture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120',
-        },
-        text: 'The terroir and climate suitability metrics are exceptional here! 🍇✨',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        _id: 'c1-2',
-        user: {
-          fullName: 'Ajmal',
-          username: 'ajmal',
-          profilePicture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120',
-        },
-        text: '50-year pre-verified water rights make this a bulletproof acquisition. 🍷',
-        createdAt: new Date(Date.now() - 7200000).toISOString(),
-      },
-      {
-        _id: 'c1-3',
-        user: {
-          fullName: 'Yashwanth',
-          username: 'yashwanth',
-          profilePicture: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120',
-        },
-        text: 'Incredible drone framing! Would love to feature this estate portfolio. 🎥',
-        createdAt: new Date(Date.now() - 14400000).toISOString(),
-      },
-    ],
-  },
-  {
-    _id: '2',
-    title: 'Uluwatu Cliffside Resort',
-    location: 'Bali, Indonesia',
-    aiMatch: 92,
-    insight: 'Tourism growth in this sector is up 14% YoY. Zoning allows for luxury boutique resort development with private oceanfront boardwalks.',
-    likes: 0,
-    likesCount: 0,
-    poster: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=1200',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    music: 'Boolok AI · Coastal Hospitality Radar',
-    author: {
-      _id: 'logeshwarana',
-      fullName: 'Logeshwaran A',
-      username: 'logeshwaran',
-      profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c',
-      isVerified: true,
-      headline: 'Architectural Consultant · Tech Parks',
-    },
-    comments: [
-      {
-        _id: 'c2-1',
-        user: {
-          fullName: 'Yashwanth',
-          username: 'yashwanth',
-          profilePicture: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120',
-        },
-        text: 'Breathtaking ocean cliff views! Perfect setting for luxury resort hospitality. 🌅🏖️',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        _id: 'c2-2',
-        user: {
-          fullName: 'Shreekutti',
-          username: 'shreekutti',
-          profilePicture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120',
-        },
-        text: '14% YoY tourism surge matches our regional Bali portfolio forecast. 📈',
-        createdAt: new Date(Date.now() - 5400000).toISOString(),
-      },
-      {
-        _id: 'c2-3',
-        user: {
-          fullName: 'Ajmal',
-          username: 'ajmal',
-          profilePicture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120',
-        },
-        text: 'Zoning approvals for boutique development add immediate upside. 🔑',
-        createdAt: new Date(Date.now() - 10800000).toISOString(),
-      },
-    ],
-  },
-  {
-    _id: '3',
-    title: 'Kyoto Forest Retreat',
-    location: 'Kyoto, Japan',
-    aiMatch: 95,
-    insight: 'Thermal zoning optimized. High potential for eco-luxury cabins or a private wellness estate with mountain spring access.',
-    likes: 0,
-    likesCount: 0,
-    poster: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=1200',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-    music: 'Boolok AI · Alpine Zen Intelligence',
-    author: {
-      _id: 'yashwanth',
-      fullName: 'Yashwanth',
-      username: 'yashwanth_cre',
-      profilePicture: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120',
-      isVerified: true,
-      headline: 'Commercial Realty · Tech Hubs',
-    },
-    comments: [
-      {
-        _id: 'c3-1',
-        user: {
-          fullName: 'Ajmal',
-          username: 'ajmal',
-          profilePicture: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120',
-        },
-        text: 'Thermal zoning and serene forested topography are hard to find in Kyoto! ⛩️🍃',
-        createdAt: new Date(Date.now() - 7200000).toISOString(),
-      },
-      {
-        _id: 'c3-2',
-        user: {
-          fullName: 'Shreekutti',
-          username: 'shreekutti',
-          profilePicture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120',
-        },
-        text: 'Eco-luxury cabins here will command top-tier international ADRs. 🏡✨',
-        createdAt: new Date(Date.now() - 14400000).toISOString(),
-      },
-    ],
-  },
-  {
-    _id: '4',
-    title: 'Coventry Tech Campus',
-    location: 'Coventry, United Kingdom',
-    aiMatch: 97,
-    insight: 'Strong enterprise tenant interest in logistics and green tech lab spaces. Excellent connectivity to Birmingham transit network.',
-    likes: 0,
-    likesCount: 0,
-    poster: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=1200',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    music: 'Boolok AI · Corporate Industrial Audio',
-    author: {
-      _id: 'shreekutti',
-      fullName: 'Shreekutti',
-      username: 'shree_arch',
-      profilePicture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120',
-      isVerified: true,
-      headline: 'Residential & CRE Architect · Chennai',
-    },
-    comments: [
-      {
-        _id: 'c4-1',
-        user: {
-          fullName: 'Logeshwaran A',
-          username: 'logeshwaran',
-          profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c',
-        },
-        text: 'Grade-A office specs with strong institutional tenant appeal. 🏢💼',
-        createdAt: new Date(Date.now() - 1800000).toISOString(),
-      },
-      {
-        _id: 'c4-2',
-        user: {
-          fullName: 'Sai Vimenthan',
-          username: 'saivimenthan',
-          profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocK0o5SZUMa-JTOuTUTxS6t1Bl20HPwVkbFAz98dCG6e1rbpGA=s96-c',
-        },
-        text: 'High floor efficiency and convenient transit access. 🚆',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      },
-    ],
-  },
-];
+// No hardcoded seeded videos: reels are loaded live from the user and backend
+const DUMMY_VIDEOS: any[] = [];
 
 const SHARE_CONTACTS = [
   { id: '1', name: 'Shreekutti', role: 'Residential Architect · Chennai', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120' },
@@ -296,7 +108,10 @@ function getLocalUploadedReels(): any[] {
   try {
     if (Platform.OS === 'web') {
       const raw = localStorage.getItem('boolok_user_uploaded_reels');
-      return raw ? JSON.parse(raw) : [];
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list)
+        ? list.filter((r: any) => !['1', '2', '3', '4'].includes(String(r._id || r.id)))
+        : [];
     }
   } catch (_) {}
   return [];
@@ -2330,15 +2145,9 @@ export default function InsightsScreen() {
   const [listHeight, setListHeight] = useState(initialMobileHeight);
   const [activeVideoIndex, setActiveVideoIndex] = useState(0);
 
-  // Initialize with local uploaded reels if any, followed by default videos
+  // Initialize strictly with real uploaded reels
   const [videos, setVideos] = useState<any[]>(() => {
-    const local = getLocalUploadedReels();
-    if (local && local.length > 0) {
-      const seen = new Set(local.map((r: any) => r._id));
-      const demoRemaining = DUMMY_VIDEOS.filter((d) => !seen.has(d._id));
-      return [...local, ...demoRemaining];
-    }
-    return DUMMY_VIDEOS;
+    return getLocalUploadedReels();
   });
 
   const [showUpload, setShowUpload] = useState(false);
@@ -2418,18 +2227,11 @@ export default function InsightsScreen() {
           }
         });
 
-        DUMMY_VIDEOS.forEach((demo) => {
-          if (!seen.has(demo._id)) {
-            seen.add(demo._id);
-            unique.push(demo);
-          }
-        });
-
         setVideos(unique);
       } else if (localReels.length > 0) {
-        const seen = new Set(localReels.map((r: any) => r._id));
-        const demoRemaining = DUMMY_VIDEOS.filter((d) => !seen.has(d._id));
-        setVideos([...localReels, ...demoRemaining]);
+        setVideos(localReels);
+      } else {
+        setVideos([]);
       }
 
       // Sync following set directly from MongoDB database
@@ -2625,6 +2427,55 @@ export default function InsightsScreen() {
     };
   }, [scrollToNext, scrollToPrev]);
 
+  const renderEmptyReels = () => (
+    <View
+      style={{
+        flex: 1,
+        minHeight: Math.max(340, cardHeight * 0.7),
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 28,
+      }}
+    >
+      <View
+        style={{
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+          backgroundColor: 'rgba(249, 192, 61, 0.12)',
+          borderWidth: 1.5,
+          borderColor: 'rgba(249, 192, 61, 0.3)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginBottom: 16,
+        }}
+      >
+        <MaterialIcons name="video-library" size={36} color={theme.primary} />
+      </View>
+      <Text style={{ color: theme.onSurface, fontSize: 18, fontWeight: '800', marginBottom: 8, textAlign: 'center' }}>
+        No Property Reels Yet
+      </Text>
+      <Text style={{ color: theme.onSurfaceVariant, fontSize: 13, textAlign: 'center', maxWidth: 320, lineHeight: 18, marginBottom: 22 }}>
+        Upload property tours, commercial walkthroughs, or architectural reels to start streaming.
+      </Text>
+      <TouchableOpacity
+        onPress={() => setShowUpload(true)}
+        style={{
+          backgroundColor: theme.primary,
+          paddingHorizontal: 22,
+          paddingVertical: 11,
+          borderRadius: 24,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        <MaterialIcons name="video-call" size={20} color="#000000" />
+        <Text style={{ color: '#000000', fontSize: 13, fontWeight: '800' }}>Upload First Reel</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
     <Animated.View
       style={[
@@ -2661,6 +2512,7 @@ export default function InsightsScreen() {
               />
             )}
             keyExtractor={(item) => item._id}
+            ListEmptyComponent={renderEmptyReels}
             pagingEnabled={Platform.OS === 'ios'}
             snapToInterval={cardHeight}
             snapToAlignment="start"
@@ -2732,6 +2584,7 @@ export default function InsightsScreen() {
                   />
                 )}
                 keyExtractor={(item) => item._id}
+                ListEmptyComponent={renderEmptyReels}
                 showsVerticalScrollIndicator={false}
                 onViewableItemsChanged={onViewableItemsChanged}
                 viewabilityConfig={viewabilityConfig}

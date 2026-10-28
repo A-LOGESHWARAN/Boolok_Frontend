@@ -94,57 +94,8 @@ const COMMUNITY_MEMBERS = [
     closedDeals: '4',
     profilePicture: null,
     coverImage: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200',
-    reels: [
-      {
-        _id: 'shree-reel-1',
-        title: 'Bangalore Tech Park Campus',
-        location: 'Outer Ring Road, Bangalore',
-        aiMatch: 99,
-        insight: 'Grade-A LEED Platinum tech park with 94% occupancy and 8.6% cap rate.',
-        likes: 3120,
-        poster: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200',
-        thumbnail: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-        comments: [
-          { _id: 'sc-1', user: { fullName: 'Logeshwaran A' }, text: '8.6% cap rate on ORR is top quartile performance! 🏢🚀', createdAt: new Date() },
-          { _id: 'sc-2', user: { fullName: 'Akshat Commercials' }, text: 'Strong institutional covenants on this campus.', createdAt: new Date() },
-        ],
-      },
-    ],
-    posts: [
-      {
-        _id: 'shree-p-1',
-        title: 'Grade-A Commercial IT Campus',
-        price: '$42,000,000',
-        location: 'Bangalore, Karnataka',
-        specs: '92,000 sq ft · 8.4% Cap Rate',
-        content: 'Fully leased Grade-A Tech Park development with pre-verified institutional efficiency ratings.',
-        image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200',
-        mediaUrl: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200',
-        likesCount: 142,
-        commentsCount: 3,
-        comments: [
-          {
-            _id: 'sc-p-1',
-            author: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' },
-            text: '8.4% cap rate on Outer Ring Road is solid institutional yield. Top tier campus! 🏢',
-            time: '04:15 pm',
-          },
-          {
-            _id: 'sc-p-2',
-            author: { fullName: 'Akshat Commercials', username: 'the_akshtr_estate' },
-            text: 'Pre-verified covenants make this an immediate fit for REIT portfolios.',
-            time: '05:30 pm',
-          },
-          {
-            _id: 'sc-p-3',
-            author: { fullName: 'Mohammed Ajmal', username: 'ajmal' },
-            text: 'Are full floorplate blueprints available for international client syndication?',
-            time: '06:05 pm',
-          },
-        ],
-      },
-    ],
+    reels: [],
+    posts: [],
   },
   {
     id: '6a8af34812ef34aed25ae8d2',
@@ -160,81 +111,8 @@ const COMMUNITY_MEMBERS = [
     mutuals: '',
     profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c',
     coverImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200',
-    reels: [
-      {
-        _id: 'logesh-reel-1',
-        title: 'Margaret River Vineyard',
-        location: 'Western Australia',
-        aiMatch: 98,
-        insight: 'Soil analysis indicates 92% suitability for premium Cabernet Sauvignon. Water rights pre-verified for 50 years.',
-        likes: 2400,
-        poster: 'https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=1200',
-        thumbnail: 'https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=1200',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-        comments: [
-          { _id: 'c1-1', user: { fullName: 'Shreekutti' }, text: 'The terroir and climate suitability metrics are exceptional here! 🍇✨', createdAt: new Date() },
-          { _id: 'c1-2', user: { fullName: 'Mohammed Ajmal' }, text: '50-year pre-verified water rights make this a bulletproof acquisition. 🍷', createdAt: new Date() },
-        ],
-      },
-      {
-        _id: 'logesh-reel-2',
-        title: 'Kyoto Forest Retreat',
-        location: 'Kyoto, Japan',
-        aiMatch: 95,
-        insight: 'Thermal zoning optimized. High potential for eco-luxury cabins or a private wellness estate.',
-        likes: 920,
-        poster: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=1200',
-        thumbnail: 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=1200',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-        comments: [
-          { _id: 'c2-1', user: { fullName: 'Mohammed Ajmal' }, text: 'Thermal zoning and serene forested topography are hard to find in Kyoto! ⛩️🍃', createdAt: new Date() },
-          { _id: 'c2-2', user: { fullName: 'Shreekutti' }, text: 'Eco-luxury cabins here will command top-tier international ADRs. 🏡✨', createdAt: new Date() },
-        ],
-      },
-      {
-        _id: 'logesh-reel-3',
-        title: 'Uluwatu Cliffside',
-        location: 'Bali, Indonesia',
-        aiMatch: 92,
-        insight: 'Tourism growth in this sector is up 14% YoY. Zoning allows for luxury boutique resort development.',
-        likes: 1800,
-        poster: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=1200',
-        thumbnail: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?w=1200',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-        comments: [
-          { _id: 'c3-1', user: { fullName: 'Akshat Commercials' }, text: 'Breathtaking ocean cliff views! Perfect setting for luxury resort hospitality. 🌅🏖️', createdAt: new Date() },
-          { _id: 'c3-2', user: { fullName: 'Shreekutti' }, text: '14% YoY tourism surge matches our regional Bali portfolio forecast. 📈', createdAt: new Date() },
-        ],
-      },
-    ],
-    posts: [
-      {
-        _id: 'logesh-p-1',
-        title: 'Margaret River Commercial Vineyard',
-        price: '$18,500,000',
-        location: 'Western Australia',
-        specs: '140 Acres · Pre-Verified Water Rights',
-        content: 'World-class vineyard estate with high soil suitability index and pre-approved zoning.',
-        image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200',
-        mediaUrl: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200',
-        likesCount: 98,
-        commentsCount: 2,
-        comments: [
-          {
-            _id: 'lp-1',
-            author: { fullName: 'Shreekutti', username: 'shreekutti' },
-            text: 'Deeded 50-year water rights on 140 acres of prime Cabernet Sauvignon terroir is a rare find! 🍷',
-            time: '03:20 pm',
-          },
-          {
-            _id: 'lp-2',
-            author: { fullName: 'Mohammed Ajmal', username: 'ajmal' },
-            text: 'Unmatched estate footprint. Touring this with our hospitality group next week.',
-            time: '05:45 pm',
-          },
-        ],
-      },
-    ],
+    reels: [],
+    posts: [],
   },
   {
     id: 'ajmal',
@@ -247,50 +125,8 @@ const COMMUNITY_MEMBERS = [
     closedDeals: '3',
     profilePicture: null,
     coverImage: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200',
-    reels: [
-      {
-        _id: 'ajmal-reel-1',
-        title: 'Palm Jumeirah Signature Villa',
-        location: 'Dubai, UAE',
-        aiMatch: 96,
-        insight: 'Private beachfront with panoramic Dubai Marina skyline views.',
-        likes: 4200,
-        poster: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200',
-        thumbnail: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-        comments: [
-          { _id: 'ac-1', user: { fullName: 'Shreekutti' }, text: 'Unmatched beachfront elevation and bespoke finishes! 🏖️✨', createdAt: new Date() },
-        ],
-      },
-    ],
-    posts: [
-      {
-        _id: 'ajmal-p-1',
-        title: 'Waterfront Palm Signature Mansion',
-        price: '$24,000,000',
-        location: 'Palm Jumeirah, Dubai',
-        specs: '7 Beds · 9 Baths · Private Beach',
-        content: 'Direct beach access, smart home automation, infinity pool overlooking Dubai Marina.',
-        image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200',
-        mediaUrl: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200',
-        likesCount: 215,
-        commentsCount: 2,
-        comments: [
-          {
-            _id: 'aj-p-1',
-            author: { fullName: 'Prasanth Properties', username: 'prasanth_properties' },
-            text: 'Direct beach access and private marina berths are the gold standard on the Palm! 🏖️🛥️',
-            time: '01:10 pm',
-          },
-          {
-            _id: 'aj-p-2',
-            author: { fullName: 'Bavadharini RS', username: 'bavadharini_rs' },
-            text: 'The double-height infinity pool framing the Marina skyline is architectural perfection.',
-            time: '02:40 pm',
-          },
-        ],
-      },
-    ],
+    reels: [],
+    posts: [],
   },
   {
     id: 'bavadharini_rs',
@@ -303,50 +139,8 @@ const COMMUNITY_MEMBERS = [
     closedDeals: '2',
     profilePicture: null,
     coverImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1200',
-    reels: [
-      {
-        _id: 'bava-reel-1',
-        title: 'Minimalist Penthouse Renovation',
-        location: 'Poes Garden, Chennai',
-        aiMatch: 97,
-        insight: 'Italian marble integration with customized circadian acoustic lighting.',
-        likes: 1850,
-        poster: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1200',
-        thumbnail: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1200',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-        comments: [
-          { _id: 'bc-1', user: { fullName: 'Akshat Commercials' }, text: 'Incredible acoustic zoning and clean lines! 🌿', createdAt: new Date() },
-        ],
-      },
-    ],
-    posts: [
-      {
-        _id: 'bava-p-1',
-        title: 'High-Ceiling Ultra Penthouse',
-        price: '$6,200,000',
-        location: 'Chennai, Tamil Nadu',
-        specs: '5,800 sq ft · Private Elevator',
-        content: 'Double-height glass living room, customized Italian joinery, panoramic sea view balcony.',
-        image: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1200',
-        mediaUrl: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?w=1200',
-        likesCount: 164,
-        commentsCount: 2,
-        comments: [
-          {
-            _id: 'bv-p-1',
-            author: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' },
-            text: 'Flawless Italian joinery and natural lighting control. Remarkable penthouse execution! ✨',
-            time: '11:20 am',
-          },
-          {
-            _id: 'bv-p-2',
-            author: { fullName: 'Akshat Commercials', username: 'the_akshtr_estate' },
-            text: 'Private elevator access and uninterrupted sea views command top-tier pricing.',
-            time: '01:05 pm',
-          },
-        ],
-      },
-    ],
+    reels: [],
+    posts: [],
   },
   {
     id: 'the_akshtr_estate',
@@ -359,50 +153,8 @@ const COMMUNITY_MEMBERS = [
     closedDeals: '2',
     profilePicture: null,
     coverImage: 'https://images.unsplash.com/photo-1577495508048-b635879837f1?w=1200',
-    reels: [
-      {
-        _id: 'akshat-reel-1',
-        title: 'OMR Cyber Park Tower B',
-        location: 'OMR, Chennai',
-        aiMatch: 95,
-        insight: 'Pre-leased to Fortune 500 tech tenant on a 9-year triple net lease.',
-        likes: 2900,
-        poster: 'https://images.unsplash.com/photo-1577495508048-b635879837f1?w=1200',
-        thumbnail: 'https://images.unsplash.com/photo-1577495508048-b635879837f1?w=1200',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-        comments: [
-          { _id: 'akc-1', user: { fullName: 'Logeshwaran A' }, text: 'Triple net lease with institutional covenants is top tier! 🏢', createdAt: new Date() },
-        ],
-      },
-    ],
-    posts: [
-      {
-        _id: 'akshat-p-1',
-        title: 'Institutional Grade-A Office Hub',
-        price: '$35,000,000',
-        location: 'OMR IT Corridor, Chennai',
-        specs: '120,000 sq ft · 8.9% Yield',
-        content: 'Modern commercial tower with multi-level parking, 100% power backup, and prime expressway frontage.',
-        image: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200',
-        mediaUrl: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200',
-        likesCount: 188,
-        commentsCount: 2,
-        comments: [
-          {
-            _id: 'ak-p-1',
-            author: { fullName: 'Shreekutti', username: 'shreekutti' },
-            text: '8.9% yield on OMR expressway frontage with institutional covenants is prime! 🏢💼',
-            time: '10:30 am',
-          },
-          {
-            _id: 'ak-p-2',
-            author: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' },
-            text: 'Floorplate load ratios and multi-level parking verify Grade-A compliance.',
-            time: '12:15 pm',
-          },
-        ],
-      },
-    ],
+    reels: [],
+    posts: [],
   },
   {
     id: 'prasanth_properties',
@@ -415,50 +167,8 @@ const COMMUNITY_MEMBERS = [
     closedDeals: '2',
     profilePicture: null,
     coverImage: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1200',
-    reels: [
-      {
-        _id: 'prasanth-reel-1',
-        title: 'Star Island Waterfront Estate',
-        location: 'Miami Beach, Florida',
-        aiMatch: 98,
-        insight: 'Deepwater dock with direct ocean access, accommodating 120ft mega yachts.',
-        likes: 3800,
-        poster: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1200',
-        thumbnail: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1200',
-        videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-        comments: [
-          { _id: 'pc-1', user: { fullName: 'Mohammed Ajmal' }, text: 'Deepwater dock specs and yacht clearance are remarkable. 🛥️🌊', createdAt: new Date() },
-        ],
-      },
-    ],
-    posts: [
-      {
-        _id: 'prasanth-p-1',
-        title: 'Star Island Waterfront Estate',
-        price: '$19,800,000',
-        location: 'Miami Beach, Florida',
-        specs: '6 Beds · 8 Baths · Private Mega-Yacht Dock',
-        content: 'Bespoke modern architecture with floor-to-ceiling glass, sunset views, and private yacht slip.',
-        image: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1200',
-        mediaUrl: 'https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=1200',
-        likesCount: 290,
-        commentsCount: 2,
-        comments: [
-          {
-            _id: 'pp-p-1',
-            author: { fullName: 'Mohammed Ajmal', username: 'ajmal' },
-            text: 'Direct ocean access and private mega-yacht clearance make Star Island unmatched. 🌊🛥️',
-            time: '02:15 pm',
-          },
-          {
-            _id: 'pp-p-2',
-            author: { fullName: 'Bavadharini RS', username: 'bavadharini_rs' },
-            text: 'Floor-to-ceiling glass integration brings uninterrupted Miami sunsets indoors.',
-            time: '04:00 pm',
-          },
-        ],
-      },
-    ],
+    reels: [],
+    posts: [],
   },
   {
     id: 'aswin',
@@ -472,34 +182,7 @@ const COMMUNITY_MEMBERS = [
     profilePicture: null,
     coverImage: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200',
     reels: [],
-    posts: [
-      {
-        _id: 'aswin-p-1',
-        title: 'Prime Multi-Family Commercial Asset',
-        price: '$12,500,000',
-        location: 'Chennai, Tamil Nadu',
-        specs: '45,000 sq ft · 8.4% Cap Rate',
-        content: 'High-yield commercial multi-family portfolio with pre-verified institutional efficiency ratings.',
-        image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200',
-        mediaUrl: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1200',
-        likesCount: 115,
-        commentsCount: 2,
-        comments: [
-          {
-            _id: 'asw-p-1',
-            author: { fullName: 'Akshat Commercials', username: 'the_akshtr_estate' },
-            text: '8.4% cap rate on a 45,000 sq ft multi-family asset offers high capital security. 📈',
-            time: '01:45 pm',
-          },
-          {
-            _id: 'asw-p-2',
-            author: { fullName: 'Shreekutti', username: 'shreekutti' },
-            text: 'Solid cash flow profile. Let us connect regarding investor syndication terms.',
-            time: '03:10 pm',
-          },
-        ],
-      },
-    ],
+    posts: [],
   },
   {
     id: 'vignesh',
@@ -513,40 +196,7 @@ const COMMUNITY_MEMBERS = [
     profilePicture: null,
     coverImage: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200',
     reels: [],
-    posts: [
-      {
-        _id: 'vignesh-p-1',
-        title: 'Beverly Hills Modern Architectural Masterpiece',
-        price: '$12,500,000',
-        location: 'Beverly Hills, California',
-        specs: '8 Beds · 11 Baths · Zero-Edge Pool',
-        content: 'New architectural masterpiece in Beverly Hills. 8 Bedrooms, 11 Baths, custom Italian marble, and zero-edge cascading pool. 🏆✨ Price: $12.5M.',
-        image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200',
-        mediaUrl: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200',
-        likesCount: 178,
-        commentsCount: 3,
-        comments: [
-          {
-            _id: 'vg-p-1',
-            author: { fullName: 'Sophia Sterling', username: 'sophia_luxury' },
-            text: 'Are 1/8th fractional house share syndicate slots still available for European co-owners? 🏡✨',
-            time: '09:15 am',
-          },
-          {
-            _id: 'vg-p-2',
-            author: { fullName: 'David Sterling', username: 'david_sterling' },
-            text: 'Bespoke co-ownership model on Beverly Hills estates provides exceptional capital preservation.',
-            time: '11:40 am',
-          },
-          {
-            _id: 'vg-p-3',
-            author: { fullName: 'Marcus Vance', username: 'marcus_vance' },
-            text: 'Deeded fractional title and seasonal syndicate booking structure looks turnkey. DM sent! 🔑',
-            time: '01:25 pm',
-          },
-        ],
-      },
-    ],
+    posts: [],
   },
   {
     id: 'yashwanth',
@@ -635,23 +285,7 @@ const resolvePropertyImage = (post: any) => {
   return 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200';
 };
 
-const SAI_REELS = [
-  {
-    _id: 'sai-reel-coventry',
-    title: 'Coventry Office',
-    location: 'Coventry, United Kingdom',
-    aiMatch: 97,
-    insight: 'Strong engagement expected based on similar recent listings.',
-    likes: 0,
-    poster: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=1200',
-    thumbnail: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=1200',
-    videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    comments: [
-      { _id: 'c4-1', user: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' }, text: 'Grade-A office specs with strong institutional tenant appeal. 🏢💼', createdAt: new Date() },
-      { _id: 'c4-2', user: { fullName: 'Shreekutti', username: 'shreekutti' }, text: 'High floor efficiency and convenient transit access. 🚆', createdAt: new Date() },
-    ],
-  },
-];
+const SAI_REELS: any[] = [];
 
 function resolveMemberProfile(targetId: string, viewer: any) {
   const norm = (targetId || '').trim().toLowerCase();
@@ -675,25 +309,12 @@ function resolveMemberProfile(targetId: string, viewer: any) {
       bio: viewer?.bio || 'Real estate professional and advisor on the Boolok AI network.',
       profilePicture: viewer?.profilePicture || null,
       coverImage: viewer?.coverImage || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200',
-      closedDeals: viewer?.closedDeals || '3',
+      closedDeals: viewer?.closedDeals || '0',
       followerCount: 0,
       followingCount: 0,
       mutuals: '0 followers in Boolok Real Estate Network',
-      reels: SAI_REELS,
-      posts: [
-        {
-          _id: 'sai-p-1',
-          title: 'Coventry Corporate Headquarters',
-          price: '$16,500,000',
-          location: 'Coventry, United Kingdom',
-          specs: '52,000 sq ft · 8.2% Cap Rate',
-          content: 'Grade-A institutional office headquarters with 100% occupancy and blue-chip covenants.',
-          image: 'https://images.unsplash.com/photo-1577495508048-b635879837f1?w=1200',
-          mediaUrl: 'https://images.unsplash.com/photo-1577495508048-b635879837f1?w=1200',
-          likesCount: 104,
-          commentsCount: 14,
-        },
-      ],
+      reels: [],
+      posts: [],
     };
   }
 
@@ -1267,13 +888,20 @@ export default function ProfessionalUserProfileScreen() {
   const [userReels, setUserReels] = useState<any[]>([]);
   const [localReels, setLocalReels] = useState<any[]>([]);
 
+  const isDummyReelId = (id: any) =>
+    ['1', '2', '3', '4', 'sai-reel-coventry', 'logesh-reel-1', 'logesh-reel-2', 'logesh-reel-3', 'shree-reel-1', 'ajmal-reel-1', 'bava-reel-1', 'akshat-reel-1', 'prasanth-reel-1'].includes(String(id));
+
   useEffect(() => {
     if (Platform.OS === 'web') {
       try {
         const raw = localStorage.getItem('boolok_user_uploaded_reels');
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) setLocalReels(parsed);
+          if (Array.isArray(parsed)) {
+            const clean = parsed.filter((r: any) => !isDummyReelId(r._id) && !isDummyReelId(r.id));
+            setLocalReels(clean);
+            localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify(clean));
+          }
         }
       } catch (_) {}
     } else {
@@ -1282,7 +910,11 @@ export default function ProfessionalUserProfileScreen() {
           const raw = await SecureStore.getItemAsync('boolok_user_uploaded_reels');
           if (raw) {
             const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) setLocalReels(parsed);
+            if (Array.isArray(parsed)) {
+              const clean = parsed.filter((r: any) => !isDummyReelId(r._id) && !isDummyReelId(r.id));
+              setLocalReels(clean);
+              await SecureStore.setItemAsync('boolok_user_uploaded_reels', JSON.stringify(clean));
+            }
           }
         } catch (_) {}
       })();
@@ -2411,18 +2043,10 @@ export default function ProfessionalUserProfileScreen() {
   })();
 
   const reelsToDisplay = isSelf
-    ? (mergedSelfReels.length > 0 ? mergedSelfReels : (Array.isArray(profileUser.reels) && profileUser.reels.length > 0 ? profileUser.reels : (fallbackUser.reels || [])))
-    : (Array.isArray(data?.reels) && data.reels.length > 0
-      ? data.reels
-      : (Array.isArray(profileUser.reels) && profileUser.reels.length > 0 ? profileUser.reels : (fallbackUser.reels || [])));
+    ? mergedSelfReels
+    : (Array.isArray(data?.reels) ? data.reels : []);
 
-  const postsToDisplay = isSelf
-    ? (Array.isArray(data?.posts) && data.posts.length > 0
-        ? data.posts
-        : (Array.isArray(profileUser.posts) && profileUser.posts.length > 0 ? profileUser.posts : []))
-    : (Array.isArray(data?.posts) && data.posts.length > 0
-        ? data.posts
-        : (Array.isArray(profileUser.posts) && profileUser.posts.length > 0 ? profileUser.posts : (fallbackUser.posts || [])));
+  const postsToDisplay = Array.isArray(data?.posts) ? data.posts : [];
 
   const postCount = postsToDisplay.length;
   const reelCount = reelsToDisplay.length;

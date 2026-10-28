@@ -298,122 +298,8 @@ const DEFAULT_COMMUNITY_ADVISORS = [
   },
 ];
 
-// ── Default Fallback Community Posts ─────────────────────────────────────────
-const DEFAULT_FEED_POSTS = [
-  {
-    _id: 'shree-p-1',
-    content: 'Fully leased Grade-A Tech Park development with pre-verified institutional efficiency ratings. 8.4% Cap Rate · 92,000 sq ft · Outer Ring Road, Bangalore.',
-    mediaUrl: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200',
-    author: {
-      _id: 'shreekutti',
-      fullName: 'Shreekutti',
-      username: 'shreekutti',
-      profilePicture: null,
-      headline: 'Tech Park Campus Acquisitions Lead @ Boolok',
-      location: 'Bangalore, Karnataka',
-    },
-    likes: ['logeshwarana', 'ajmal', 'sai'],
-    likesCount: 3,
-    isLiked: false,
-    likesSummary: 'Liked by 3 members',
-    comments: [
-      { _id: 'sc-1', author: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' }, text: '8.4% cap rate on Outer Ring Road is top quartile! 🏢🚀', time: '04:15 pm' },
-      { _id: 'sc-2', author: { fullName: 'Akshat Commercials', username: 'the_akshtr_estate' }, text: 'Strong institutional covenants on this campus.', time: '05:30 pm' },
-    ],
-    commentsCount: 2,
-    time: '2h ago · 🌐',
-  },
-  {
-    _id: 'ajmal-p-1',
-    content: 'Direct beach access, smart home automation, infinity pool overlooking Dubai Marina. Palm Jumeirah Signature Mansion — 7 Beds · Private Beach · $24,000,000.',
-    mediaUrl: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200',
-    author: {
-      _id: 'ajmal',
-      fullName: 'Mohammed Ajmal',
-      username: 'ajmal',
-      profilePicture: null,
-      headline: 'Luxury Living & High-End Residential Broker',
-      location: 'Palm Jumeirah, Dubai',
-    },
-    likes: ['sai', 'logeshwarana', 'shreekutti'],
-    likesCount: 3,
-    isLiked: false,
-    likesSummary: 'Liked by 3 members',
-    comments: [
-      { _id: 'ac-1', author: { fullName: 'Shreekutti', username: 'shreekutti' }, text: 'Unrivaled private beach frontage!', time: '10:00 am' },
-      { _id: 'ac-2', author: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' }, text: 'Bespoke marble and high ceiling elevation.', time: '11:15 am' },
-    ],
-    commentsCount: 2,
-    time: '4h ago · 🌐',
-  },
-  {
-    _id: 'logesh-p-1',
-    content: 'World-class vineyard estate with high soil suitability index and pre-approved zoning. Margaret River Commercial Vineyard — 140 Acres · Pre-Verified Water Rights · $18,500,000.',
-    mediaUrl: 'https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?w=1200',
-    author: {
-      _id: 'logeshwarana',
-      fullName: 'Logeshwaran A',
-      username: 'logeshwarana',
-      profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c',
-      headline: 'Architectural Consultant & Real Estate Lead',
-      location: 'Western Australia',
-    },
-    likes: ['sai', 'shreekutti', 'bavadharini_rs'],
-    likesCount: 3,
-    isLiked: false,
-    likesSummary: 'Liked by 3 members',
-    comments: [
-      { _id: 'lc-1', author: { fullName: 'Akshat Commercials', username: 'the_akshtr_estate' }, text: 'Soil analysis and water rights are pristine.', time: '02:00 pm' },
-      { _id: 'lc-2', author: { fullName: 'Bavadharini RS', username: 'bavadharini_rs' }, text: 'Architectural layout is stunning.', time: '03:10 pm' },
-    ],
-    commentsCount: 2,
-    time: '6h ago · 🌐',
-  },
-  {
-    _id: 'akshat-p-1',
-    content: 'Modern commercial tower with multi-level parking, 100% power backup, and prime expressway frontage. Institutional Grade-A Office Hub — 120,000 sq ft · 8.9% Yield · OMR IT Corridor.',
-    mediaUrl: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=1200',
-    author: {
-      _id: 'the_akshtr_estate',
-      fullName: 'Akshat Commercials',
-      username: 'the_akshtr_estate',
-      profilePicture: null,
-      headline: 'Commercial Property & Tech Park Portfolio Lead @ Boolok Network',
-      location: 'OMR IT Corridor, Chennai',
-    },
-    likes: ['sai', 'shreekutti', 'logeshwarana'],
-    likesCount: 3,
-    isLiked: false,
-    likesSummary: 'Liked by 3 members',
-    comments: [
-      { _id: 'akc-1', author: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' }, text: 'Triple net lease with institutional covenants is top tier!', time: '06:00 pm' },
-    ],
-    commentsCount: 1,
-    time: '8h ago · 🌐',
-  },
-  {
-    _id: 'sai-p-1',
-    content: 'Grade-A institutional office headquarters with 100% occupancy and blue-chip covenants. Coventry Corporate Headquarters — 52,000 sq ft · 8.2% Cap Rate · $16,500,000.',
-    mediaUrl: 'https://images.unsplash.com/photo-1577495508048-b635879837f1?w=1200',
-    author: {
-      _id: 'saivimenthanvl',
-      fullName: 'Sai Vimenthan',
-      username: 'saivimenthanvl',
-      profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocK0o5SZUMa-JTOuTUTxS6t1Bl20HPwVkbFAz98dCG6e1rbpGA=s96-c',
-      headline: 'Elite Real Estate Broker & Commercial Portfolio Lead',
-      location: 'Chennai, Tamil Nadu',
-    },
-    likes: ['logeshwarana', 'shreekutti'],
-    likesCount: 2,
-    isLiked: false,
-    likesSummary: 'Liked by 2 members',
-    comments: [
-      { _id: 'spc-1', author: { fullName: 'Logeshwaran A', username: 'logeshwarana', profilePicture: 'https://lh3.googleusercontent.com/a/ACg8ocJ_TV7-lpSTfRAQI0wc76yPHoIWaWg_5lgW-i9RxbiPx4tlFk0r=s96-c' }, text: 'Prime UK corporate covenants. Solid institutional deal!', time: '04:00 pm' },
-    ],
-    commentsCount: 1,
-    time: '1d ago · 🌐',
-  },
-];
+// ── Feed Posts (loaded live from the backend API) ───────────────────────────
+const DEFAULT_FEED_POSTS: any[] = [];
 
 const REACTION_TYPES = [
   { key: 'like', label: 'Like', icon: 'thumb-up', color: '#3b82f6', bg: '#0a66c2' },
@@ -432,7 +318,7 @@ export default function ProfessionalSocialFeedScreen() {
 
   const styles = useMemo(() => getStyles(isDark, width), [isDark, width]);
 
-  const [posts, setPosts] = useState<any[]>(DEFAULT_FEED_POSTS);
+  const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [newsList, setNewsList] = useState(DEFAULT_REAL_ESTATE_NEWS);
@@ -712,9 +598,9 @@ export default function ProfessionalSocialFeedScreen() {
         const raw = feedRes.value.data;
         const postsList = Array.isArray(raw) ? raw : (Array.isArray(raw?.posts) ? raw.posts : []);
         // Apply cached like counts so counts survive page reload
-        setPosts(_applyLikeCache(postsList.length > 0 ? postsList : DEFAULT_FEED_POSTS));
+        setPosts(_applyLikeCache(postsList));
       } else {
-        setPosts(_applyLikeCache(DEFAULT_FEED_POSTS));
+        setPosts([]);
       }
 
       if (newsRes.status === 'fulfilled' && Array.isArray(newsRes.value.data?.news)) {
