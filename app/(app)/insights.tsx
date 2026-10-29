@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useSyncExternalStore } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  AppState,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,7 +30,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { API_BASE_URL, resolveImageUrl } from '../../lib/api';
 import { formatSmartDateTime } from '../../lib/dateTime';
 
@@ -89,19 +90,43 @@ function resolveCoverUrl(item: any): string {
 }
 
 function resolveVideoUrl(item: any): string {
-  const url = item?.videoUrl;
-  if (!url || typeof url !== 'string' || !url.trim()) {
-    return 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
-  }
-  const clean = url.trim();
-  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('blob:') || clean.startsWith('data:')) {
-    return clean;
-  }
-  if (clean.startsWith('/uploads/reels/')) {
-    const filename = clean.replace('/uploads/reels/', '');
-    return `${API_BASE_URL}/api/reels/stream/${filename}`;
-  }
-  return clean.startsWith('/') ? `${API_BASE_URL}${clean}` : `${API_BASE_URL}/${clean}`;
+  const raw = item?.videoUrl;
+  if (!raw || typeof raw !== 'string' || !raw.trim()) return '';
+  const clean = raw.trim();
+  if (clean.startsWith('blob:') || clean.startsWith('data:')) return clean;
+  // Absolute OR relative uploads always go through the range-aware stream endpoint
+  const m = clean.match(/\/uploads\/reels\/([^/?#]+)/);
+  if (m) return `${API_BASE_URL}/api/reels/stream/${m[1]}`;
+  if (/^https?:\/\//i.test(clean)) return clean;
+  return `${API_BASE_URL}${clean.startsWith('/') ? clean : `/${clean}`}`;
+}
+
+function withCacheBust(url: string): string {
+  if (!url || url.startsWith('blob:') || url.startsWith('data:')) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}r=${Date.now()}`;
+}
+
+// ── Global mute state: one switch for the whole feed (not one per reel) ─────
+// Web browsers block autoplay with sound, so web starts muted; native starts with sound.
+let globalMuted = Platform.OS === 'web';
+const muteListeners = new Set<() => void>();
+function setGlobalMuted(next: boolean) {
+  if (globalMuted === next) return;
+  globalMuted = next;
+  muteListeners.forEach((l) => l());
+}
+function useGlobalMuted(): [boolean, (v: boolean) => void] {
+  const muted = useSyncExternalStore(
+    (cb) => {
+      muteListeners.add(cb);
+      return () => {
+        muteListeners.delete(cb);
+      };
+    },
+    () => globalMuted,
+    () => true
+  );
+  return [muted, setGlobalMuted];
 }
 
 function getLocalUploadedReels(): any[] {
@@ -260,33 +285,53 @@ const VideoItem = ({
 
   const [deleting, setDeleting] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useGlobalMuted();
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [videoHasError, setVideoHasError] = useState(false);
   const [showHeartBurst, setShowHeartBurst] = useState(false);
   const [expandedInsight, setExpandedInsight] = useState(false);
 
   const [videoSrc, setVideoSrc] = useState<string>(() => resolveVideoUrl(item));
-  const [isFallbackStream, setIsFallbackStream] = useState(false);
   const [coverHasError, setCoverHasError] = useState(false);
+  const retryCountRef = useRef(0);
+  const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
+  const singleTapTimer = useRef<any>(null);
+  const likeInFlightRef = useRef(false);
 
   useEffect(() => {
-    setVideoSrc(resolveVideoUrl(item));
-    setIsFallbackStream(false);
-    setVideoHasError(false);
+    const resolved = resolveVideoUrl(item);
+    retryCountRef.current = 0;
+    setVideoSrc(resolved);
+    setVideoHasError(!resolved);
     setIsVideoLoaded(false);
     setCoverHasError(false);
   }, [item._id, item.videoUrl]);
 
+  useEffect(() => {
+    return () => {
+      if (singleTapTimer.current) clearTimeout(singleTapTimer.current);
+    };
+  }, []);
+
+  // One automatic retry (cache-busted), then show a real error state instead of
+  // silently swapping in a different demo video.
   const handleVideoError = () => {
-    console.warn('[reels] Video stream unreachable or expired:', videoSrc);
-    if (!isFallbackStream) {
-      setIsFallbackStream(true);
-      setVideoSrc('https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
-      setIsVideoLoaded(true);
+    console.warn('[reels] Video failed to load:', videoSrc);
+    if (retryCountRef.current < 1 && videoSrc) {
+      retryCountRef.current += 1;
+      setVideoSrc(withCacheBust(resolveVideoUrl(item)));
     } else {
       setVideoHasError(true);
     }
+  };
+
+  const handleRetry = (e?: any) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    retryCountRef.current = 0;
+    setVideoHasError(false);
+    setIsVideoLoaded(false);
+    setVideoSrc(withCacheBust(resolveVideoUrl(item)));
   };
 
   // Follow author state
@@ -431,10 +476,33 @@ const VideoItem = ({
   const lastTapRef = useRef<number>(0);
   const commentsScrollRef = useRef<ScrollView>(null);
 
-  const player = useVideoPlayer(videoSrc, (p) => {
+  // On web we render a plain <video>, so don't spin up a hidden native player per reel.
+  const player = useVideoPlayer(Platform.OS === 'web' ? null : (videoSrc || null), (p) => {
     p.loop = true;
     p.muted = isMuted;
+    p.volume = 1.0;
   });
+
+  // Native: keep UI in sync with the real player + surface load errors
+  useEffect(() => {
+    if (Platform.OS === 'web' || !player) return;
+    const playingSub = player.addListener('playingChange', ({ isPlaying: playing }: any) => {
+      setIsPlaying(Boolean(playing));
+    });
+    const statusSub = player.addListener('statusChange', ({ status }: any) => {
+      if (status === 'readyToPlay') {
+        setIsVideoLoaded(true);
+        setVideoHasError(false);
+        if (isActiveRef.current) player.play();
+      } else if (status === 'error') {
+        handleVideoError();
+      }
+    });
+    return () => {
+      playingSub.remove();
+      statusSub.remove();
+    };
+  }, [player]);
 
   // Load mobile persistent storage on mount
   useEffect(() => {
@@ -473,35 +541,49 @@ const VideoItem = ({
     })();
   }, [item._id, authorId]);
 
-  // Autoplay / Pause based on visibility
-  useEffect(() => {
-    if (isActive) {
-      if (Platform.OS === 'web' && webVideoRef.current) {
-        const vid = webVideoRef.current;
-        vid.muted = isMuted;
-        const p = vid.play();
-        if (p !== undefined) {
-          p.then(() => {
-            setIsPlaying(true);
-          }).catch(() => {
-            vid.muted = true;
-            vid.play().then(() => setIsPlaying(true)).catch(() => {});
-          });
+  // Web: play with sound if allowed, otherwise fall back to muted AND update the shared mute
+  // state so the speaker icon never lies about what you are hearing.
+  const playWeb = () => {
+    const vid = webVideoRef.current;
+    if (!vid) return;
+    vid.muted = isMuted;
+    vid.volume = 1.0;
+    const p = vid.play();
+    if (p !== undefined) {
+      p.then(() => setIsPlaying(true)).catch((err: any) => {
+        if (err?.name === 'AbortError') return; // interrupted by a newer load/pause - harmless
+        if (!vid.muted) {
+          vid.muted = true;
+          setIsMuted(true);
+          vid.play().then(() => setIsPlaying(true)).catch(() => {});
         }
-      } else if (player) {
-        player.muted = isMuted;
-        player.play();
-        setIsPlaying(true);
+      });
+    }
+  };
+
+  // Autoplay / Pause based on visibility. Inactive reels are ALWAYS paused (no overlapping audio).
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const vid = webVideoRef.current;
+      if (!vid) return;
+      if (isActive) {
+        playWeb();
+      } else {
+        vid.pause();
+        setIsPlaying(false);
       }
+      return;
+    }
+    if (!player) return;
+    player.muted = isMuted;
+    player.volume = 1.0;
+    if (isActive) {
+      player.play();
     } else {
-      if (Platform.OS === 'web' && webVideoRef.current) {
-        webVideoRef.current.pause();
-      } else if (player) {
-        player.pause();
-      }
+      player.pause();
       setIsPlaying(false);
     }
-  }, [isActive, isMuted]);
+  }, [isActive, isMuted, videoSrc, player]);
 
   // Handle Play / Pause toggle
   const togglePlay = (e?: any) => {
@@ -542,7 +624,7 @@ const VideoItem = ({
       const vid = webVideoRef.current;
       vid.muted = nextMuted;
       vid.volume = 1.0;
-      if (!nextMuted) {
+      if (isActive && vid.paused) {
         vid.play().catch(() => {});
       }
     } else if (player) {
@@ -559,33 +641,43 @@ const VideoItem = ({
     }, 700);
   };
 
-  // Tap handler: single tap play/pause, double tap like
+  // Tap handler: single tap play/pause (delayed so a double tap never pauses first),
+  // double tap like. While muted, the first tap turns sound on instead of pausing.
   const handleVideoPress = () => {
     const now = Date.now();
-    if (now - lastTapRef.current < 300) {
-      // Double tap -> Like
+    if (now - lastTapRef.current < 280) {
+      if (singleTapTimer.current) {
+        clearTimeout(singleTapTimer.current);
+        singleTapTimer.current = null;
+      }
+      lastTapRef.current = 0;
       if (!hasLiked) {
         handleLike();
       } else {
         triggerHeartBurst();
       }
-    } else {
-      if (isMuted && Platform.OS === 'web' && webVideoRef.current) {
-        const vid = webVideoRef.current;
-        vid.muted = false;
-        vid.volume = 1.0;
-        setIsMuted(false);
-      }
-      togglePlay();
+      return;
     }
     lastTapRef.current = now;
+    singleTapTimer.current = setTimeout(() => {
+      singleTapTimer.current = null;
+      if (isMuted) {
+        toggleMute();
+      } else {
+        togglePlay();
+      }
+    }, 280);
   };
 
   // Like Toggle
   const handleLike = async (e?: any) => {
     if (e && e.stopPropagation) e.stopPropagation();
+    if (likeInFlightRef.current) return;
+    likeInFlightRef.current = true;
 
     const nextState = !hasLiked;
+    const prevState = hasLiked;
+    const prevCount = likesCount;
     const nextCount = nextState ? likesCount + 1 : Math.max(0, likesCount - 1);
     setHasLiked(nextState);
     setLikesCount(nextCount);
@@ -664,8 +756,16 @@ const VideoItem = ({
           } catch (_) {}
         }
       }
-    } catch (err) {
-      console.warn('Liked in local session only');
+    } catch (err: any) {
+      if (err?.response) {
+        // Server answered with an error: roll the optimistic update back
+        setHasLiked(prevState);
+        setLikesCount(prevCount);
+      } else {
+        console.warn('Liked in local session only');
+      }
+    } finally {
+      likeInFlightRef.current = false;
     }
   };
 
@@ -928,18 +1028,7 @@ const VideoItem = ({
   const authorDisplayName = String(authorName || item.authorName || item.author?.fullName || '').trim().toLowerCase();
 
   const isUploadedByMe = Boolean(
-    (currentUserId && authorUserId && currentUserId === authorUserId) ||
-    (currentUsername && authorUserHandle && currentUsername === authorUserHandle) ||
-    (currentFullName && authorDisplayName && currentFullName === authorDisplayName) ||
-    (currentUsername && authorDisplayName && currentUsername === authorDisplayName) ||
-    (item.authorName && currentFullName && item.authorName.trim().toLowerCase() === currentFullName) ||
-    authorUserId === 'you' ||
-    authorUserId === 'self' ||
-    authorUserHandle === 'you' ||
-    authorUserHandle === 'self' ||
-    authorUserHandle === 'logeshwaran' ||
-    authorUserHandle === 'logeshwarana' ||
-    authorUserId === 'logeshwarana'
+    currentUserId && authorUserId && currentUserId === authorUserId
   );
 
   const isDeletable = Boolean(onDelete && isUploadedByMe);
@@ -977,17 +1066,16 @@ const VideoItem = ({
         {Platform.OS === 'web' ? (
           <video
             ref={webVideoRef}
-            src={videoSrc}
+            src={videoSrc || undefined}
             poster={coverHasError ? PROPERTY_COVER_PRESETS[0].url : resolveCoverUrl(item)}
-            autoPlay
             loop
-            muted={isMuted}
+            muted
             playsInline
-            preload="auto"
-            crossOrigin="anonymous"
+            preload={isActive ? 'auto' : 'metadata'}
             onLoadedData={() => {
               setIsVideoLoaded(true);
               setVideoHasError(false);
+              if (isActiveRef.current) playWeb();
             }}
             onError={handleVideoError}
             onPlay={() => setIsPlaying(true)}
@@ -1013,25 +1101,37 @@ const VideoItem = ({
           />
         )}
 
-        {/* Server storage notice if fallback stream is active */}
-        {isFallbackStream && (
+        {/* Real error state (no silent swap to a different demo video) */}
+        {videoHasError && (
           <View
             style={{
               position: 'absolute',
-              top: 54,
-              alignSelf: 'center',
-              backgroundColor: 'rgba(6, 11, 19, 0.85)',
-              paddingHorizontal: 12,
-              paddingVertical: 5,
-              borderRadius: 20,
-              borderWidth: 1,
-              borderColor: 'rgba(249, 192, 61, 0.5)',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(6, 11, 19, 0.7)',
               zIndex: 20,
             }}
           >
-            <Text style={{ color: theme.primary, fontSize: 11, fontWeight: '700' }}>
-              ⚡ Architectural Stream Preview (Render storage rebooted)
+            <MaterialIcons name="error-outline" size={40} color={theme.primary} />
+            <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '700', marginTop: 10 }}>
+              This video couldn't be loaded
             </Text>
+            <TouchableOpacity
+              onPress={handleRetry}
+              style={{
+                marginTop: 14,
+                paddingHorizontal: 20,
+                paddingVertical: 9,
+                borderRadius: 20,
+                backgroundColor: theme.primary,
+              }}
+            >
+              <Text style={{ color: '#000000', fontSize: 13, fontWeight: '800' }}>Retry</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -1689,6 +1789,12 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any)
         ? localStorage.getItem('userToken')
         : await SecureStore.getItemAsync('userToken');
 
+      if (!token) {
+        setUploading(false);
+        Alert.alert('Sign in required', 'Please sign in again to upload a reel.');
+        return;
+      }
+
       const formData = new FormData();
 
       if (Platform.OS === 'web') {
@@ -1746,6 +1852,16 @@ function UploadModal({ visible, onClose, onUploaded, theme, isDark, user }: any)
       const response = await axios.post(`${API_BASE_URL}/api/reels`, formData, {
         headers: {
           Authorization: `Bearer ${token}`,
+        },
+        timeout: 0,
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        onUploadProgress: (evt: any) => {
+          if (evt?.total) {
+            const pct = Math.round((evt.loaded / evt.total) * 100);
+            setUploadProgress(Math.min(95, 15 + Math.round(pct * 0.8)));
+            setUploadStageText(pct < 100 ? `Uploading video… ${pct}%` : 'Processing on server…');
+          }
         },
       });
 
@@ -2153,6 +2269,22 @@ export default function InsightsScreen() {
   const [showUpload, setShowUpload] = useState(false);
   const flatListRef = useRef<FlatList>(null);
 
+  // Pause everything (and silence audio) when leaving the tab, backgrounding the app,
+  // or opening the upload sheet.
+  const [screenFocused, setScreenFocused] = useState(true);
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true);
+      return () => setScreenFocused(false);
+    }, [])
+  );
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => setAppActive(st === 'active'));
+    return () => sub.remove();
+  }, []);
+  const canPlay = screenFocused && appActive && !showUpload;
+
   // Layout sizing
   const cardWidth = isMobile ? width : 420;
   const cardHeight = isMobile
@@ -2202,36 +2334,38 @@ export default function InsightsScreen() {
           comments: Array.isArray(r.comments) ? r.comments : [],
           commentsCount: Array.isArray(r.comments) ? r.comments.length : 0,
           author: {
-            _id: r.author?._id || 'sai',
-            fullName: r.authorName || r.author?.fullName || 'Sai Vimenthan',
-            username: r.author?.username || 'saivimenthan',
-            profilePicture: r.author?.profilePicture || 'https://lh3.googleusercontent.com/a/ACg8ocK0o5SZUMa-JTOuTUTxS6t1Bl20HPwVkbFAz98dCG6e1rbpGA=s96-c',
+            _id: r.author?._id || null,
+            fullName: r.authorName || r.author?.fullName || 'Boolok Member',
+            username: r.author?.username || 'member',
+            profilePicture: r.author?.profilePicture || null,
             isVerified: true,
           },
           poster: r.poster || r.thumbnail || resolveCoverUrl(r),
           thumbnail: r.thumbnail || r.poster || resolveCoverUrl(r),
-          videoUrl: r.videoUrl.startsWith('http')
-            ? r.videoUrl
-            : `${API_BASE_URL}${r.videoUrl}`,
+          videoUrl: r.videoUrl,
           music: 'Boolok AI · Market Verification Audio',
           createdAt: r.createdAt,
         }));
 
-        const combined = [...localReels, ...dbReels];
-        const seen = new Set();
-        const unique: any[] = [];
-        combined.forEach((item) => {
-          if (!seen.has(item._id)) {
-            seen.add(item._id);
-            unique.push(item);
-          }
-        });
-
-        setVideos(unique);
-      } else if (localReels.length > 0) {
-        setVideos(localReels);
+        // Server is the source of truth. Old behaviour merged stale localStorage copies on
+        // top, which resurrected deleted reels and kept dead video URLs / old like counts.
+        setVideos(dbReels);
+        if (Platform.OS === 'web') {
+          try {
+            const ids = new Set(dbReels.map((r: any) => r._id));
+            localStorage.setItem(
+              'boolok_user_uploaded_reels',
+              JSON.stringify(localReels.filter((r: any) => ids.has(r._id)))
+            );
+          } catch (_) {}
+        }
       } else {
         setVideos([]);
+        if (Platform.OS === 'web') {
+          try {
+            localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify([]));
+          } catch (_) {}
+        }
       }
 
       // Sync following set directly from MongoDB database
@@ -2289,9 +2423,7 @@ export default function InsightsScreen() {
       },
       poster: chosenPoster,
       thumbnail: chosenPoster,
-      videoUrl: newReel.videoUrl?.startsWith('http')
-        ? newReel.videoUrl
-        : `${API_BASE_URL}${newReel.videoUrl}`,
+      videoUrl: newReel.videoUrl,
       music: 'Boolok AI · User Uploaded Property Radar',
       createdAt: newReel.createdAt || new Date().toISOString(),
     };
@@ -2503,7 +2635,7 @@ export default function InsightsScreen() {
             renderItem={({ item, index }) => (
               <VideoItem
                 item={item}
-                isActive={activeVideoIndex === index}
+                isActive={canPlay && activeVideoIndex === index}
                 cardHeight={cardHeight}
                 cardWidth={cardWidth}
                 isMobile={true}
@@ -2512,6 +2644,13 @@ export default function InsightsScreen() {
               />
             )}
             keyExtractor={(item) => item._id}
+            extraData={`${activeVideoIndex}-${canPlay}`}
+            onScrollToIndexFailed={(info) => {
+              flatListRef.current?.scrollToOffset({
+                offset: info.averageItemLength * info.index,
+                animated: true,
+              });
+            }}
             ListEmptyComponent={renderEmptyReels}
             pagingEnabled={Platform.OS === 'ios'}
             snapToInterval={cardHeight}
@@ -2526,7 +2665,7 @@ export default function InsightsScreen() {
             windowSize={3}
             maxToRenderPerBatch={2}
             initialNumToRender={2}
-            removeClippedSubviews={Platform.OS === 'android'}
+            removeClippedSubviews={false}
             getItemLayout={cardHeight > 100 ? (_, index) => ({
               length: cardHeight,
               offset: cardHeight * index,
@@ -2575,7 +2714,7 @@ export default function InsightsScreen() {
                 renderItem={({ item, index }) => (
                   <VideoItem
                     item={item}
-                    isActive={activeVideoIndex === index}
+                    isActive={canPlay && activeVideoIndex === index}
                     cardHeight={cardHeight}
                     cardWidth={cardWidth}
                     isMobile={false}
@@ -2584,6 +2723,13 @@ export default function InsightsScreen() {
                   />
                 )}
                 keyExtractor={(item) => item._id}
+                extraData={`${activeVideoIndex}-${canPlay}`}
+                onScrollToIndexFailed={(info) => {
+                  flatListRef.current?.scrollToOffset({
+                    offset: info.averageItemLength * info.index,
+                    animated: true,
+                  });
+                }}
                 ListEmptyComponent={renderEmptyReels}
                 showsVerticalScrollIndicator={false}
                 onViewableItemsChanged={onViewableItemsChanged}
