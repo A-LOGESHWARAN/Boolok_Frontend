@@ -892,34 +892,38 @@ export default function ProfessionalUserProfileScreen() {
     ['1', '2', '3', '4', 'sai-reel-coventry', 'logesh-reel-1', 'logesh-reel-2', 'logesh-reel-3', 'shree-reel-1', 'ajmal-reel-1', 'bava-reel-1', 'akshat-reel-1', 'prasanth-reel-1'].includes(String(id));
 
   useEffect(() => {
+    const activeUserId = viewer?.id || viewer?._id || viewer?.username || 'self';
+    const storageKey = 'boolok_user_uploaded_reels_' + activeUserId;
     if (Platform.OS === 'web') {
       try {
-        const raw = localStorage.getItem('boolok_user_uploaded_reels');
+        const raw = localStorage.getItem(storageKey);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
             const clean = parsed.filter((r: any) => !isDummyReelId(r._id) && !isDummyReelId(r.id));
             setLocalReels(clean);
-            localStorage.setItem('boolok_user_uploaded_reels', JSON.stringify(clean));
           }
+        } else {
+          setLocalReels([]);
         }
       } catch (_) {}
     } else {
       (async () => {
         try {
-          const raw = await SecureStore.getItemAsync('boolok_user_uploaded_reels');
+          const raw = await SecureStore.getItemAsync(storageKey);
           if (raw) {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed)) {
               const clean = parsed.filter((r: any) => !isDummyReelId(r._id) && !isDummyReelId(r.id));
               setLocalReels(clean);
-              await SecureStore.setItemAsync('boolok_user_uploaded_reels', JSON.stringify(clean));
             }
+          } else {
+            setLocalReels([]);
           }
         } catch (_) {}
       })();
     }
-  }, []);
+  }, [viewer?.id, viewer?._id, viewer?.username]);
 
   const defaultFallbackUser = {
     id: viewer?.id || viewer?._id || 'self',
@@ -2034,7 +2038,15 @@ export default function ProfessionalUserProfileScreen() {
     const seen = new Set();
     const unique: any[] = [];
     combined.forEach((r) => {
-      if (r && r._id && !seen.has(r._id)) {
+      if (r && r._id && !seen.has(r._id) && !isDummyReelId(r._id) && !isDummyReelId(r.id)) {
+        const authorId = r.author?._id || r.author?.id || (typeof r.author === 'string' ? r.author : '');
+        const viewerId = viewer?.id || viewer?._id || '';
+        const authorUsername = (r.author?.username || r.authorName || '').toLowerCase();
+        const viewerUsername = (viewer?.username || '').toLowerCase();
+        // Skip if author is distinctly someone else
+        if (authorId && viewerId && authorId !== viewerId && authorUsername && viewerUsername && authorUsername !== viewerUsername) {
+          return;
+        }
         seen.add(r._id);
         unique.push(r);
       }
@@ -2044,7 +2056,7 @@ export default function ProfessionalUserProfileScreen() {
 
   const reelsToDisplay = isSelf
     ? mergedSelfReels
-    : (Array.isArray(data?.reels) ? data.reels : []);
+    : (Array.isArray(data?.reels) ? data.reels.filter((r: any) => !isDummyReelId(r._id) && !isDummyReelId(r.id)) : []);
 
   const postsToDisplay = Array.isArray(data?.posts) ? data.posts : [];
 
@@ -2877,14 +2889,16 @@ export default function ProfessionalUserProfileScreen() {
                 })}
               </View>
             ) : (
-              <View style={{ paddingVertical: 48, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: cardBg, borderRadius: 16, borderWidth: 1, borderColor, width: '100%', marginVertical: 8 }}>
-                <MaterialCommunityIcons name="office-building-outline" size={44} color={textMuted} style={{ marginBottom: 12 }} />
-                <Text style={{ color: textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 6 }}>
-                  {isSelf ? 'You have not posted any properties yet' : 'No properties & listings available for now'}
+              <View style={{ paddingVertical: 56, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: cardBg, borderRadius: 16, borderWidth: 1, borderColor, width: '100%', marginVertical: 8 }}>
+                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: isDark ? 'rgba(218, 165, 32, 0.08)' : '#FFFBEB', alignItems: 'center', justifyContent: 'center', marginBottom: 16, borderWidth: 1, borderColor: isDark ? 'rgba(218, 165, 32, 0.25)' : '#FDE68A' }}>
+                  <MaterialCommunityIcons name="office-building-outline" size={32} color={goldPrimary} />
+                </View>
+                <Text style={{ color: textPrimary, fontSize: 18, fontWeight: '800', marginBottom: 8, letterSpacing: 0.2 }}>
+                  Nothing is added here
                 </Text>
-                <Text style={{ color: textMuted, fontSize: 13, textAlign: 'center' }}>
+                <Text style={{ color: textMuted, fontSize: 14, textAlign: 'center', maxWidth: 360, lineHeight: 20 }}>
                   {isSelf
-                    ? 'Use the "+ Create Post" box above or the Social Feed to publish your properties and market insights.'
+                    ? "You haven't uploaded any properties or listings yet. Use the '+ Create Listing' button above or feed to share properties."
                     : 'This advisor has not listed any commercial or residential properties yet.'}
                 </Text>
               </View>
@@ -2898,10 +2912,18 @@ export default function ProfessionalUserProfileScreen() {
                 ))}
               </View>
             ) : (
-              <View style={{ paddingVertical: 48, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: cardBg, borderRadius: 16, borderWidth: 1, borderColor, width: '100%', marginVertical: 8 }}>
-                <MaterialCommunityIcons name="play-box-multiple-outline" size={44} color={textMuted} style={{ marginBottom: 12 }} />
-                <Text style={{ color: textPrimary, fontSize: 16, fontWeight: '700', marginBottom: 6 }}>No video tours & reels available for now</Text>
-                <Text style={{ color: textMuted, fontSize: 13, textAlign: 'center' }}>This advisor has not published any property walkthroughs yet.</Text>
+              <View style={{ paddingVertical: 56, paddingHorizontal: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: cardBg, borderRadius: 16, borderWidth: 1, borderColor, width: '100%', marginVertical: 8 }}>
+                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: isDark ? 'rgba(218, 165, 32, 0.08)' : '#FFFBEB', alignItems: 'center', justifyContent: 'center', marginBottom: 16, borderWidth: 1, borderColor: isDark ? 'rgba(218, 165, 32, 0.25)' : '#FDE68A' }}>
+                  <MaterialIcons name="videocam-off" size={32} color={goldPrimary} />
+                </View>
+                <Text style={{ color: textPrimary, fontSize: 18, fontWeight: '800', marginBottom: 8, letterSpacing: 0.2 }}>
+                  Nothing is added here
+                </Text>
+                <Text style={{ color: textMuted, fontSize: 14, textAlign: 'center', maxWidth: 360, lineHeight: 20 }}>
+                  {isSelf
+                    ? "You haven't uploaded any video reels yet. Use the 'Publish Property Listing or Video Reel' creator above to share your first reel."
+                    : 'This advisor has not published any property walkthroughs or reels yet.'}
+                </Text>
               </View>
             )
           )}
